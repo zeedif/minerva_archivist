@@ -1,0 +1,26 @@
+name: minerva_archivist
+description: >-
+  MiNERVA Archivist — a dependency-free Dart core for auditing, filtering (1G1R),
+  and selectively downloading ROM sets from the MiNERVA Archive. Includes an
+  internal, Retool-analogous clone-grouping and RetroAchievements-tagging engine
+  sourced directly from unexpectedpanda/retool-clonelists-metadata.
+version: 2.5.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.2
+
+executables:
+  minerva_archivist:
+
+dependencies:
+  args: ^2.7.0
+  path: ^1.9.1
+  xml: ^7.0.1
+  crypto: ^3.0.7
+  archive: ^4.0.9
+  http: ^1.6.0
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.31.2

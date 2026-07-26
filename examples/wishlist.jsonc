@@ -1,0 +1,10 @@
+// Wishlist = a plain JSON/JSONC array of base game names.
+// Matching ignores case, punctuation, a leading/trailing "The", region/tags,
+// and matches clonelist aliases (any title in a clone group pulls the group).
+// Combine with achievements from the CLI: -a / --retroachievements + --combine.
+[
+  "Boulders and Bombs",
+  "Coco Notes",
+  "Shattered Alliance",
+  "Tristam Island"
+]
