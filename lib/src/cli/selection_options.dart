@@ -1,4 +1,4 @@
-/// The selection option set (`--lang`, `--wishlist`, `--exclude-*`, ...) and its
+/// The selection option set (`--lang`, `--wishlist`, `--exclude`, ...) and its
 /// resolution into a `GameSelector` run.
 ///
 /// Kept out of `runner.dart` so that file stays the command registry; stages
@@ -11,6 +11,7 @@ import 'package:args/args.dart';
 
 import '../data/dat_loader.dart';
 import '../data/metadata_repository.dart';
+import '../domain/auditor.dart';
 import '../domain/selection.dart';
 import '../models/dat.dart';
 import '../models/metadata.dart';
@@ -25,7 +26,21 @@ extension SelectedTargetX on SelectedTarget {
   /// The selected games as a DAT, for the stages that audit against one.
   DatFile get target => DatFile(header: dat.header, games: selection.games);
 
-  /// `404 -> 309  (status -55, category -30, 1g1r -10)`
+  /// The games whose clone group already has a dump settled inside a curated
+  /// folder. Fetching another dump of one of these would put a second copy of the
+  /// same game beside work built against the first.
+  Set<String> settledByCuratedGroup(AuditReport report) {
+    final settled = {
+      for (final name in report.library.curatedGames) ?selection.groups[name],
+    };
+    if (settled.isEmpty) return const {};
+    return {
+      for (final entry in selection.groups.entries)
+        if (settled.contains(entry.value)) entry.key,
+    };
+  }
+
+  /// `404 -> 309  (exclude -55, language -30, 1g1r -10)`
   String get funnel {
     final s = selection.stats;
     final why = s.reasons.isEmpty ? '' : '  (${s.reasons.join(', ')})';
@@ -33,7 +48,7 @@ extension SelectedTargetX on SelectedTarget {
   }
 }
 
-/// Retool's `exclusions` argument group, as a `package:args` separator block.
+/// The selection argument group, as a `package:args` separator block.
 extension SelectionFlags on ArgParser {
   void addSelectionFlags() {
     addSeparator('Selection:');
@@ -42,51 +57,103 @@ extension SelectionFlags on ArgParser {
       valueHelp: 'code',
       defaultsTo: const ['En'],
       help:
-          'Language priority, best first (e.g. Es,Es-MX,En,Ja). Ranking only — '
-          'a title is never dropped for lacking a language.',
+          'Language priority, best first (e.g. Es,Es-MX,En,Ja). Ranks the dumps '
+          'of a title and drops a title speaking nothing on the list, so naming '
+          'one language gives you that set. Add "Other" to give every unlisted '
+          'language a place and "Unknown" for titles with no language at all — '
+          'both rank wherever you put them. Asking for Es accepts Es-MX.',
     );
-    addFlag(
-      'filter-languages',
-      abbr: 'l',
-      negatable: false,
+    addMultiOption(
+      'region',
+      valueHelp: 'name',
       help:
-          'Also *drop* titles that support none of --lang (Retool\'s -l). '
-          'Titles whose languages are unknown are kept.',
+          'Region priority, best first (e.g. Spain,USA,Europe,Japan). Ranks and '
+          'restricts like --lang, with the same "Other" and "Unknown" entries; '
+          'untagged titles count as Unknown. Defaults to the full region order, '
+          'which lists every region and so drops nothing.',
+    );
+    addMultiOption(
+      'priority',
+      valueHelp: 'axis',
+      allowed: ScoreAxis.values.map((a) => a.name),
+      defaultsTo: ScoringConfig.defaultPriority.map((a) => a.name).toList(),
+      allowedHelp: {
+        'lang': 'Rank by --lang order.',
+        'region': 'Rank by --region order.',
+        'ra':
+            'Rank titles that carry achievements first, a hash-verified dump '
+            'ahead of one only matched by name.',
+      },
+      help:
+          'Which tie-breaks decide a clone group, best first. region keeps a '
+          'fixed place below the others even when left out, so naming it only '
+          'lifts it above the axes you did list; lang and ra left out play no '
+          'part at all.',
     );
     addOption(
       'wishlist',
       valueHelp: 'path',
-      help: 'JSON/JSONC file holding an array of game names to keep.',
-    );
-    addFlag(
-      'retroachievements',
-      abbr: 'a',
-      negatable: false,
-      help: 'Keep RetroAchievements-supported titles.',
+      help:
+          'JSON/JSONC file holding an array of game names to select. A name may '
+          'be any of a title\'s regional spellings, and naming a multi-game pack '
+          'asks for the pack rather than for each title in it.',
     );
     addOption(
-      'combine',
+      'wishlist-mode',
       valueHelp: 'mode',
-      allowed: FilterCombineMode.values.map((m) => m.name),
-      defaultsTo: FilterCombineMode.or.name,
+      allowed: WishlistMode.values.map((m) => m.name),
+      defaultsTo: WishlistMode.absolute.name,
       allowedHelp: {
-        'or': 'Union: wishlisted titles plus RetroAchievements titles.',
-        'and': 'Intersection: wishlisted titles that also have achievements.',
+        'absolute':
+            'A set of its own, ranked above --lang and --region: everything you '
+            'named is selected, those orders only pick which of its dumps, and '
+            '--achievements adds to it instead of cutting it down.',
+        'subset':
+            'One condition among the others: a named title still has to pass '
+            '--lang, --region and --achievements.',
       },
-      help: 'How --wishlist and --retroachievements combine.',
+      help: 'What naming a title claims about it.',
     );
-    addMultiOption(
-      'exclude-status',
-      valueHelp: 'status',
-      allowed: ProductionStatus.values.map((s) => s.name),
-      help: 'Drop games with these production statuses.',
-    );
-    addMultiOption(
-      'exclude-category',
-      valueHelp: 'name',
+    addOption(
+      'achievements',
+      valueHelp: 'scope',
+      allowed: AchievementScope.values.map((s) => s.name),
+      allowedHelp: {
+        'any':
+            'Titles with achievements on any of their dumps, leaving --priority '
+            'to pick which dump represents them.',
+        'approved':
+            'Only the dumps the achievement set was authored against, matching '
+            'their hashes exactly.',
+      },
       help:
-          'Drop games whose DAT or clonelist category contains any of these '
-          '(case-insensitive), e.g. Applications,Manuals,Video,Coverdiscs.',
+          'Select only titles with RetroAchievements support. Omit it and '
+          'achievements restrict nothing, though --priority ra still ranks them.',
+    );
+    addOption(
+      'supersets',
+      valueHelp: 'mode',
+      allowed: SupersetMode.values.map((m) => m.name),
+      defaultsTo: SupersetMode.prefer.name,
+      allowedHelp: {
+        'prefer':
+            'A pack answers for everything it contains, so those titles are not '
+            'selected again beside it.',
+        'ignore':
+            'Treat a pack as an ordinary release and choose the individual '
+            'titles on their own merits.',
+      },
+      help: 'What a pack or subsuming edition is worth against its contents.',
+    );
+    addMultiOption(
+      'exclude',
+      valueHelp: 'kind',
+      allowed: ExcludeKind.values.map((k) => k.cli),
+      help:
+          'Drop these kinds of dump outright. Each is recognized by the DAT '
+          'category, the clonelist category and the name, so a trial disc counts '
+          'as one however it is spelled. Excludes always apply, the wishlist '
+          'included.',
     );
   }
 }
@@ -99,11 +166,9 @@ final class SelectionContext {
     required this.config,
     required this.scoring,
     required this.wishlist,
-    required this.includeRetroAchievements,
-    required this.combine,
-    required this.excludeStatuses,
-    required this.excludeCategories,
-    required this.filterLanguages,
+    required this.wishlistMode,
+    required this.achievements,
+    required this.exclude,
     this.selector = const GameSelector(),
   });
 
@@ -111,11 +176,9 @@ final class SelectionContext {
   final InternalConfig config;
   final ScoringConfig scoring;
   final List<String> wishlist;
-  final bool includeRetroAchievements;
-  final FilterCombineMode combine;
-  final Set<ProductionStatus> excludeStatuses;
-  final Set<String> excludeCategories;
-  final bool filterLanguages;
+  final WishlistMode wishlistMode;
+  final AchievementScope? achievements;
+  final Set<ExcludeKind> exclude;
   final GameSelector selector;
 
   /// Runs the full pipeline for one DAT, pulling its clonelist/metadata/RA/MIA
@@ -127,11 +190,9 @@ final class SelectionContext {
       config: config,
       scoring: scoring,
       wishlist: wishlist,
-      includeRetroAchievements: includeRetroAchievements,
-      combine: combine,
-      excludeStatuses: excludeStatuses,
-      excludeCategories: excludeCategories,
-      filterLanguages: filterLanguages,
+      wishlistMode: wishlistMode,
+      achievements: achievements,
+      exclude: exclude,
       cloneList: await repo.cloneList(name, flavor),
       metadata: await repo.metadata(name, flavor),
       ra: await repo.retroAchievements(name, dat: dat),
@@ -153,19 +214,32 @@ mixin SelectionCommand on ArchivistCommand {
       config: config,
       scoring: ScoringConfig(
         languagePriority: r.multiOption('lang'),
-        regionPriority: config.defaultRegionOrder,
+        // Without --region the full order ranks everything, `Unknown` included.
+        regionPriority: r.multiOption('region').isEmpty
+            ? config.defaultRegionOrder
+            : r.multiOption('region'),
+        // What settles values the lists above land on one position — everything
+        // sharing an `Other` slot, chiefly. Without these the winner among them
+        // is whatever the next tie-break happens to say, down to alphabetical.
+        languageFallback: config.defaultLanguageOrder,
+        regionFallback: config.defaultRegionOrder,
+        priority: [
+          for (final axis in r.multiOption('priority'))
+            ScoreAxis.values.byName(axis),
+        ],
+        supersets: SupersetMode.values.byName(r.option('supersets')!),
       ),
       wishlist: wishlistPath == null
           ? const []
           : parseWishlist(await File(wishlistPath).readAsString()),
-      includeRetroAchievements: r.flag('retroachievements'),
-      combine: FilterCombineMode.values.byName(r.option('combine')!),
-      excludeStatuses: {
-        for (final s in r.multiOption('exclude-status'))
-          ProductionStatus.values.byName(s),
+      wishlistMode: WishlistMode.values.byName(r.option('wishlist-mode')!),
+      achievements: switch (r.option('achievements')) {
+        final scope? => AchievementScope.values.byName(scope),
+        null => null,
       },
-      excludeCategories: r.multiOption('exclude-category').toSet(),
-      filterLanguages: r.flag('filter-languages'),
+      exclude: {
+        for (final kind in r.multiOption('exclude')) ?ExcludeKind.byCli(kind),
+      },
     );
   }
 

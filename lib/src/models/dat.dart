@@ -85,22 +85,194 @@ final class RomEntry {
 /// element shape.
 enum DatFlavor { noIntro, redump, mameRedump, retool, unknown }
 
+/// How a game reached the RetroAchievements index, weakest claim first.
+///
+/// A hash join proves the achievement set was authored against these bytes. A
+/// name join only proves RA covers a title so named: RA sometimes validates an
+/// undocumented variant, leaving the title the only bridge back to the catalogued
+/// dump. Ordered so `index` doubles as a confidence ranking for 1G1R.
+enum RaMatch { none, byName, byHash }
+
 /// Production/release status, declared best-first so `index` doubles as a
 /// ranking for 1G1R scoring.
 ///
-/// [mia] ("Missing In Action") rides along as a status so `--exclude-status mia`
-/// works and an unpreserved dump loses to an obtainable one. Note this makes it
-/// exclusive with the other statuses, unlike Retool's orthogonal `is_mia` flag.
+/// [mia] ("Missing In Action") rides along as a status so an unpreserved dump
+/// loses to an obtainable one, though being unpreserved is really orthogonal to
+/// the rest.
 enum ProductionStatus {
   released,
   prototype,
   beta,
   alpha,
   demo,
-  sample,
   pirate,
   unlicensed,
   mia,
+}
+
+/// A kind of dump that can be excluded outright, and every signal that betrays
+/// it: the DAT's own `<category>`, the clonelist's, and the name patterns that
+/// stand in for a `<category>` element the DAT omits.
+///
+/// One taxonomy for two jobs — [statusFor] grades a dump for 1G1R,
+/// [matchesName]/[matchesCategory] drop one — so a trial disc is recognized as
+/// one whether or not the DAT says so.
+enum ExcludeKind {
+  addOns(cli: 'add-ons', categories: ['add-on']),
+  applications(
+    cli: 'applications',
+    categories: ['application'],
+    patterns: [r'\((?:Test )?Program\)', r'(?:Check|Sample) Program'],
+  ),
+  audio(cli: 'audio', categories: ['audio'], patterns: [r'\(Soundtrack\)']),
+  badDumps(cli: 'bad-dumps', categories: ['bad dump'], patterns: [r'\[b\]']),
+  bios(
+    // A DAT that files firmware under `Console` means this.
+    cli: 'bios',
+    categories: ['bios', 'console'],
+    patterns: [r'\[BIOS\]', r'\(Enhancement Chip\)'],
+  ),
+  bonusDiscs(cli: 'bonus-discs', categories: ['bonus disc']),
+  coverdiscs(
+    cli: 'coverdiscs',
+    categories: ['coverdisc'],
+    patterns: [r'\(Covermount\)'],
+  ),
+  demos(
+    cli: 'demos',
+    categories: ['demo'],
+    status: ProductionStatus.demo,
+    patterns: [
+      r'\((?:\w[-.]?\s*)*Demo(?:(?:,?\s|-)[\w0-9.]*)*\)',
+      r'\(Sample(?:\s[0-9]*|\s\d{4}-\d{2}-\d{2})?\)',
+      // Trial editions as the Japanese and Korean releases spell them.
+      'Taikenban',
+      'Cheheompan',
+      r'\(@barai\)',
+      r'\((?:Full )?Trial\)',
+      r'Trial (?:Disc|Edition|Version|ver\.)',
+      r'\((?:GameCube )?Preview\)',
+      r'\((?:\w-?\s*)*?Kiosk,?(?:\s\w*?)*\)|Kiosk Demo Disc|(?:PSP System|PS2) Kiosk',
+    ],
+  ),
+  educational(cli: 'educational', categories: ['educational']),
+  manuals(cli: 'manuals', categories: ['manual'], patterns: [r'\(Manual\)']),
+  mia(cli: 'mia', status: ProductionStatus.mia),
+  multimedia(
+    cli: 'multimedia',
+    categories: ['multimedia'],
+    patterns: [r'\(Magazine\)'],
+  ),
+  pirate(
+    cli: 'pirate',
+    categories: ['pirate'],
+    status: ProductionStatus.pirate,
+    patterns: [r'\(Pirate\)'],
+  ),
+  preproduction(
+    cli: 'preproduction',
+    categories: ['preproduction'],
+    status: ProductionStatus.prototype,
+    patterns: [
+      r'\((?:\w*?\s)*Alpha(?:\s\d+)?\)',
+      r'\((?:\w*?\s)*Beta(?:\s\d+)?\)',
+      r'\((?:\w*?\s)*Proto(?:type)?(?:\s\d+)?\)',
+      r'\((?:Pre-production|Prerelease)\)',
+      r'\((?:DEV|DEBUG|Debug Build)\)',
+    ],
+  ),
+  promotional(
+    cli: 'promotional',
+    categories: ['promotional'],
+    patterns: [r'\(Promo\)', 'EPK', 'Press Kit'],
+  ),
+  unlicensed(
+    cli: 'unlicensed',
+    categories: ['unlicensed', 'aftermarket'],
+    status: ProductionStatus.unlicensed,
+    patterns: [r'\(Unl\)', r'\(Aftermarket\)'],
+  ),
+  video(
+    cli: 'video',
+    categories: ['video'],
+    patterns: [
+      r'Game Boy Advance Video',
+      r'- (?:Preview|Movie) Trailer',
+      r'\(Nintendo (?:3DS )?(?:Direct|Conference).*?\)',
+      r'\((?:\w*\s)*Trailer(?:s|\sDisc)?(?:\s\w*)*\)',
+      r'\((?:E3.*)?Video\)',
+    ],
+  );
+
+  const ExcludeKind({
+    required this.cli,
+    this.categories = const [],
+    this.patterns = const [],
+    this.status,
+  });
+
+  /// The spelling the CLI accepts.
+  final String cli;
+
+  /// Substrings that identify this kind inside a category string.
+  final List<String> categories;
+
+  /// Full-name patterns, as source so the enum stays a `const` declaration.
+  final List<String> patterns;
+
+  /// The status a name match implies, for the kinds that grade a dump rather
+  /// than merely classify it. [ProductionStatus.beta] and [ProductionStatus
+  /// .alpha] are reachable only through a tag, never through this enum: they
+  /// share [preproduction] with prototypes and nothing ranks between them.
+  final ProductionStatus? status;
+
+  static final _compiled = {
+    for (final kind in values)
+      kind: [for (final p in kind.patterns) RegExp(p, caseSensitive: false)],
+  };
+
+  static final _byCli = {for (final kind in values) kind.cli: kind};
+
+  /// The kind named [cli], or null when nothing is.
+  static ExcludeKind? byCli(String cli) => _byCli[cli.trim().toLowerCase()];
+
+  /// The kind a graded dump belongs to, so excluding a kind also excludes what
+  /// the DAT's own tags already said. Released dumps belong to none.
+  static ExcludeKind? forStatus(ProductionStatus status) => switch (status) {
+    ProductionStatus.prototype ||
+    ProductionStatus.beta ||
+    ProductionStatus.alpha => preproduction,
+    ProductionStatus.demo => demos,
+    ProductionStatus.pirate => pirate,
+    ProductionStatus.unlicensed => unlicensed,
+    ProductionStatus.mia => mia,
+    ProductionStatus.released => null,
+  };
+
+  /// Whether [gameName] carries a name pattern of this kind.
+  bool matchesName(String gameName) =>
+      _compiled[this]!.any((p) => p.hasMatch(gameName));
+
+  /// Whether [category] names this kind.
+  bool matchesCategory(String category) {
+    final c = category.toLowerCase();
+    return categories.any(c.contains);
+  }
+
+  /// The worst status [gameName] betrays, or [ProductionStatus.released].
+  ///
+  /// Worst rather than first so the answer never depends on declaration order: a
+  /// dump that is both preproduction and unlicensed is graded by whichever is
+  /// further from a finished release.
+  static ProductionStatus statusFor(String gameName) {
+    var worst = ProductionStatus.released;
+    for (final kind in values) {
+      final status = kind.status;
+      if (status == null || status.index <= worst.index) continue;
+      if (kind.matchesName(gameName)) worst = status;
+    }
+    return worst;
+  }
 }
 
 /// Region/language/version signals parsed from a game's filename tags and
@@ -171,7 +343,7 @@ final class DatGame {
     this.cloneGroupId,
     this.category,
     this.chdRoms = const [],
-    this.supportsRetroAchievements = false,
+    this.retroAchievements = RaMatch.none,
   });
 
   final String name;
@@ -190,9 +362,13 @@ final class DatGame {
 
   final GameMetadata metadata;
 
-  /// Tagged internally by hash-matching [roms] against the RetroAchievements
-  /// index — never read from a DAT attribute.
-  final bool supportsRetroAchievements;
+  /// How this game reached the RetroAchievements index — tagged internally,
+  /// never read from a DAT attribute.
+  final RaMatch retroAchievements;
+
+  /// Whether achievements exist at all. Filters ask this; the 1G1R tie-break asks
+  /// [retroAchievements], where the strength of the claim matters.
+  bool get supportsRetroAchievements => retroAchievements != RaMatch.none;
 
   bool get hasChd => chdRoms.isNotEmpty;
 
@@ -203,7 +379,7 @@ final class DatGame {
     List<RomEntry>? roms,
     List<RomEntry>? chdRoms,
     GameMetadata? metadata,
-    bool? supportsRetroAchievements,
+    RaMatch? retroAchievements,
   }) {
     return DatGame(
       name: name ?? this.name,
@@ -212,8 +388,7 @@ final class DatGame {
       roms: roms ?? this.roms,
       chdRoms: chdRoms ?? this.chdRoms,
       metadata: metadata ?? this.metadata,
-      supportsRetroAchievements:
-          supportsRetroAchievements ?? this.supportsRetroAchievements,
+      retroAchievements: retroAchievements ?? this.retroAchievements,
     );
   }
 }

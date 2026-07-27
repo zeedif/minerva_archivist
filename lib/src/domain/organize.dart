@@ -1,5 +1,5 @@
-/// On-disk library layout: the 4-mode organizer, `.m3u` playlists, and the
-/// reversible pruner.
+/// On-disk library layout: the 4-mode organizer, in-place canonicalisation of
+/// curated folders, `.m3u` playlists, and the reversible pruner.
 library;
 
 import 'dart:io';
@@ -8,6 +8,7 @@ import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
 import 'auditor.dart';
+import 'library.dart';
 
 enum FolderLayout {
   /// Files/folders sit directly in the ROM root.
@@ -40,9 +41,18 @@ final class OrganizeConfig {
 
   /// Top-level folder names never touched (user mods/hacks/patches).
   final Set<String> protectedFolders;
+
+  /// The same layout with [folders] protected too. Curated folders are discovered
+  /// per audit, so they join the explicitly protected ones here rather than at
+  /// the point the layout is read off the command line.
+  OrganizeConfig protecting(Set<String> folders) => OrganizeConfig(
+    layout: layout,
+    extract: extract,
+    protectedFolders: {...protectedFolders, ...folders},
+  );
 }
 
-enum OrganizeOp { moved, extracted, skippedProtected, failed }
+enum OrganizeOp { moved, extracted, renamed, skippedProtected, failed }
 
 /// A planned or executed organization step.
 final class OrganizeAction {
@@ -73,6 +83,8 @@ extension OrganizeActionsX on List<OrganizeAction> {
       if (countOf(OrganizeOp.moved) > 0) '${countOf(OrganizeOp.moved)} moved',
       if (countOf(OrganizeOp.extracted) > 0)
         '${countOf(OrganizeOp.extracted)} extracted',
+      if (countOf(OrganizeOp.renamed) > 0)
+        '${countOf(OrganizeOp.renamed)} renamed in place',
       if (countOf(OrganizeOp.skippedProtected) > 0)
         '${countOf(OrganizeOp.skippedProtected)} protected-skip',
       if (countOf(OrganizeOp.failed) > 0) '${countOf(OrganizeOp.failed)} failed',
@@ -293,6 +305,122 @@ final class EsdeRomOrganizer {
   }
 }
 
+/// Brings names inside curated folders in line with the DAT without moving
+/// anything out of them.
+///
+/// A curated folder is off-limits to [EsdeRomOrganizer]: its patches, manuals and
+/// translations only make sense beside the dump they were made for. Names still
+/// drift — an abbreviated folder, a hand-renamed ROM — and renaming in place is
+/// the one correction that cannot disturb what was built around the dump, so it
+/// is the only one this stage makes.
+final class CuratedFolderRenamer {
+  const CuratedFolderRenamer();
+
+  Future<List<OrganizeAction>> rename({
+    required AuditReport report,
+    required Directory romRoot,
+    OrganizeConfig config = const OrganizeConfig(),
+    bool dryRun = false,
+  }) async {
+    final actions = <OrganizeAction>[];
+    for (final entry in report.library.curated) {
+      // An explicit --protect means hands off, full stop.
+      if (config.protectedFolders.contains(entry.name)) {
+        actions.add(
+          OrganizeAction(
+            op: OrganizeOp.skippedProtected,
+            game: entry.games.join(', '),
+            destination: p.join(romRoot.path, entry.name),
+          ),
+        );
+        continue;
+      }
+
+      // ROMs first: they are renamed within the folder as it stands, so a
+      // folder rename afterwards can't invalidate the paths.
+      for (final located in entry.roms) {
+        if (located.hasCanonicalName) continue;
+        actions.add(
+          await _rename(
+            located.file,
+            p.join(located.file.parent.path, located.rom.name),
+            located.game.name,
+            dryRun,
+          ),
+        );
+      }
+
+      final action = await _renameFolder(entry, romRoot, config, dryRun);
+      if (action != null) actions.add(action);
+    }
+    return actions;
+  }
+
+  /// Renames the folder only when it unambiguously holds one complete game —
+  /// with two games in it there is no name that would be right, and with a
+  /// half-present one the game it holds isn't settled yet.
+  Future<OrganizeAction?> _renameFolder(
+    LibraryEntry entry,
+    Directory romRoot,
+    OrganizeConfig config,
+    bool dryRun,
+  ) async {
+    if (entry.games.length != 1) return null;
+    final complete = entry.completeGames;
+    if (complete.length != 1) return null;
+
+    final game = complete.first;
+    // The extracted folder-as-file layout names the folder after the file, so it
+    // is the one layout that keeps the extension.
+    final canonical =
+        config.layout == FolderLayout.folderAsFile && config.extract
+        ? '$game${p.extension(entry.roms.first.rom.name)}'
+        : game;
+    if (entry.name == canonical) return null;
+
+    return _rename(
+      Directory(p.join(romRoot.path, entry.name)),
+      p.join(romRoot.path, canonical),
+      game,
+      dryRun,
+    );
+  }
+
+  Future<OrganizeAction> _rename(
+    FileSystemEntity source,
+    String destination,
+    String game,
+    bool dryRun,
+  ) async {
+    // Never overwrite: a name already taken means two things want one slot, and
+    // choosing between them is not this stage's call.
+    if (await File(destination).exists() ||
+        await Directory(destination).exists()) {
+      return OrganizeAction(
+        op: OrganizeOp.failed,
+        game: game,
+        destination: destination,
+        error: 'already exists',
+      );
+    }
+    try {
+      if (!dryRun) await source.rename(destination);
+      return OrganizeAction(
+        op: OrganizeOp.renamed,
+        game: game,
+        destination: destination,
+      );
+    } on FileSystemException catch (e) {
+      return OrganizeAction(
+        op: OrganizeOp.failed,
+        game: game,
+        destination: destination,
+        error: e.osError?.message ?? e.message,
+      );
+    }
+  }
+}
+
 /// Groups present games into disc/side families and writes one `.m3u` per
 /// multi-disc family, ordered so `Disc 1` leads.
 final class DiscM3uGenerator {
@@ -342,22 +470,58 @@ final class TrashPruner {
     required AuditReport report,
     required Directory romRoot,
     Set<String> protectedFolders = const {},
+
+    /// Canonicalized paths to spare whatever the audit says of them. The pipeline
+    /// passes what the download stage just fetched: quarantining that would undo
+    /// the fetch and have the next run repeat it.
+    Set<String> keep = const {},
     bool dryRun = false,
   }) async {
     final trash = Directory(p.join(romRoot.path, trashFolderName));
     final moved = <File>[];
-    for (final file in report.unknownFiles) {
+    final emptied = <String>{};
+    // `prunable` already withholds anything under a folder the user has curated.
+    for (final file in report.prunable(romRoot)) {
       final rel = p.relative(file.path, from: romRoot.path);
       final top = p.split(rel).first;
       if (top == trashFolderName || protectedFolders.contains(top)) continue;
+      if (keep.contains(p.canonicalize(file.path))) continue;
 
       final dest = File(p.join(trash.path, rel));
       moved.add(dest);
       if (!dryRun) {
         await dest.parent.create(recursive: true);
+        if (!p.equals(file.parent.path, romRoot.path)) {
+          emptied.add(file.parent.path);
+        }
         await file.rename(dest.path);
       }
     }
+    // A folder that held nothing but a redundant dump has no reason to survive
+    // it; leaving it behind makes the root look like the game is still there.
+    if (!dryRun) await _removeIfEmpty(emptied, romRoot);
     return moved;
+  }
+
+  Future<void> _removeIfEmpty(Set<String> candidates, Directory romRoot) async {
+    // Deepest first, so a nested pair collapses in one pass.
+    for (final path in candidates.toList()
+      ..sort((a, b) => b.length.compareTo(a.length))) {
+      var current = Directory(path);
+      while (!p.equals(current.path, romRoot.path) &&
+          p.isWithin(romRoot.path, current.path)) {
+        try {
+          if (await current.list(followLinks: false).isEmpty) {
+            final parent = current.parent;
+            await current.delete();
+            current = parent;
+          } else {
+            break;
+          }
+        } on FileSystemException {
+          break;
+        }
+      }
+    }
   }
 }

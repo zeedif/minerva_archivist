@@ -18,16 +18,19 @@ final class DatEnricher {
   }) {
     final regionSet = config.defaultRegionOrder.toSet();
 
-    // Carts match RA by raw hash. Disc systems don't (RA uses a special
-    // primary-executable hash), so fall back to region-free name matching only
-    // when hash matching yields nothing across the whole DAT.
-    final raHashHits = ra == null ? 0 : dat.games.where(ra.supportsGame).length;
-    final useNameFallback = ra != null && ra.isNotEmpty && raHashHits == 0;
+    // Hash joining is partial, not all-or-nothing: a disc DAT reaches no RA entry
+    // at all, since RA hashes the primary executable, and a re-hashed flavor
+    // reaches some. Scoping the name fallback to the entries no hash reaches
+    // covers both without letting a name stand in for an already-claimed dump.
+    final beyondHashes = ra?.namesBeyondHashes(dat.games) ?? const <String>{};
 
     final games = <DatGame>[];
     for (final g in dat.games) {
       final regions = _regionsFromTags(g.metadata.rawTags, regionSet);
-      final effectiveRegions = regions.isNotEmpty ? regions : g.metadata.regions;
+      var effectiveRegions = regions.isNotEmpty ? regions : g.metadata.regions;
+      // An untagged title carries the region `Unknown`, so region ranking and
+      // filtering have a value to work with.
+      if (effectiveRegions.isEmpty) effectiveRegions = const ['Unknown'];
 
       final md = metadata?[g.name];
       final languages = <String>[...g.metadata.languages];
@@ -54,10 +57,13 @@ final class DatEnricher {
             localName: md?.localName ?? g.metadata.localName,
             status: status,
           ),
-          supportsRetroAchievements: ra == null
-              ? false
-              : (ra.supportsGame(g) ||
-                    (useNameFallback && ra.supportsName(g.name))),
+          retroAchievements: ra == null
+              ? RaMatch.none
+              : ra.supportsGame(g)
+              ? RaMatch.byHash
+              : beyondHashes.contains(RetroAchievementsIndex.normalize(g.name))
+              ? RaMatch.byName
+              : RaMatch.none,
         ),
       );
     }
@@ -67,9 +73,9 @@ final class DatEnricher {
 
   /// A game is MIA when any of its ROMs is.
   ///
-  /// Retool matches on CRC alone — a name match after a redump/rename is a
-  /// false positive — so the name set is only a fallback for entries the MIA
-  /// list publishes without a CRC.
+  /// Matched on CRC alone, since a name match after a redump or rename is a
+  /// false positive. The name set is only a fallback for entries the list
+  /// publishes without a CRC.
   bool _isMia(DatGame g, MiaList mias) {
     for (final r in g.roms) {
       final crc = r.crc32;

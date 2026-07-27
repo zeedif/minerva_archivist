@@ -131,23 +131,17 @@ final class LogiqxDatParser {
       if (t != null) tags.add(t.trim());
     }
 
-    var status = ProductionStatus.released;
-    for (final t in tags) {
-      final lt = t.toLowerCase();
-      if (lt.contains('proto')) {
-        status = ProductionStatus.prototype;
-      } else if (lt.contains('beta')) {
-        status = ProductionStatus.beta;
-      } else if (lt.contains('alpha')) {
-        status = ProductionStatus.alpha;
-      } else if (lt.contains('demo')) {
-        status = ProductionStatus.demo;
-      } else if (lt.contains('sample')) {
-        status = ProductionStatus.sample;
-      } else if (lt == 'pirate') {
-        status = ProductionStatus.pirate;
-      } else if (lt == 'unl' || lt.contains('unlicensed') || lt.contains('aftermarket')) {
-        status = ProductionStatus.unlicensed;
+    var status = ExcludeKind.statusFor(name);
+    if (status == ProductionStatus.prototype) {
+      // The taxonomy grades every preproduction dump alike; only the tag says
+      // which of the three it is, and they do not rank the same.
+      for (final t in tags) {
+        final refined = switch (t.toLowerCase()) {
+          final s when s.contains('beta') => ProductionStatus.beta,
+          final s when s.contains('alpha') => ProductionStatus.alpha,
+          _ => null,
+        };
+        if (refined != null && refined.index > status.index) status = refined;
       }
     }
 
