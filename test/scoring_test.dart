@@ -103,6 +103,52 @@ void main() {
       expect(winners.single.game.name, 'Beta (Japan)');
     });
 
+    test('an (Alt) dump competes with its original, never duplicates it', () {
+      // MSX ships up to five dumps of one game; only the original may survive.
+      final games = [
+        _game('Balance (Japan) (Alt 3)', regions: ['Japan']),
+        _game('Balance (Japan)', regions: ['Japan']),
+        _game('Balance (Japan) (Alt)', regions: ['Japan']),
+      ];
+      final config = InternalConfig(
+        cloneListMetadataUrl: Uri.parse('https://example.invalid'),
+        defaultRegionOrder: const ['Japan'],
+      );
+      final winners = engine.selectBest(
+        grouper.candidates(_dat(games), null, TitleNormalizer(config)),
+        const ScoringConfig(regionPriority: ['Japan']),
+      );
+      expect(winners.single.game.name, 'Balance (Japan)');
+    });
+
+    test('variantRank ranks Retool step 13 in its precedence order', () {
+      // Alt is filtered before OEM, so an OEM title outranks an Alt one.
+      expect(ScoringEngine.variantRank('Game (USA)'), 0);
+      expect(
+        ScoringEngine.variantRank('Game (USA) (OEM)'),
+        lessThan(ScoringEngine.variantRank('Game (USA) (Alt)')),
+      );
+      expect(
+        ScoringEngine.variantRank('Game (USA) (Rerelease)'),
+        lessThan(ScoringEngine.variantRank('Game (USA) (Covermount)')),
+      );
+    });
+
+    test('a full tie resolves to the higher name, whatever the DAT order', () {
+      List<String> pick(List<DatGame> games) => engine
+          .selectBest(
+            grouper.candidates(_dat(games), null),
+            const ScoringConfig(regionPriority: ['USA']),
+          )
+          .map((c) => c.game.name)
+          .toList();
+
+      final a = _game('Game (USA) (Set 1)', regions: ['USA']);
+      final b = _game('Game (USA) (Set 2)', regions: ['USA']);
+      expect(pick([a, b]), ['Game (USA) (Set 2)']);
+      expect(pick([b, a]), ['Game (USA) (Set 2)']);
+    });
+
     test('released beats prototype', () {
       final winners = engine.selectBest(
         grouper.candidates(
@@ -201,6 +247,40 @@ void main() {
       expect(normalizer.shortName('Game (Europe) (Rev 1)'), 'game');
       expect(normalizer.shortName('Game (Europe) (v1.02)'), 'game');
       expect(normalizer.shortName('Game (USA) (DSiWare)'), 'game');
+    });
+
+    test('drops the dump-variant tags Retool keeps out of the key', () {
+      for (final tag in const [
+        '(Alt)',
+        '(Alt 2)',
+        '(Build 1234)',
+        '(Beta)',
+        '(Beta 2)',
+        '(Proto)',
+        '(Prototype 3)',
+        '(Pre-production)',
+        '(Debug Build)',
+        '(Aftermarket)',
+        '(Unl)',
+        '(OEM)',
+        '(Rerelease)',
+        '(Review Code)',
+        '(NTSC)',
+        '(PAL 60Hz)',
+        '(20260710)',
+        '(2026-07-10)',
+      ]) {
+        expect(normalizer.shortName('Game (USA) $tag'), 'game', reason: tag);
+      }
+    });
+
+    test('keeps look-alike tags that name a different product', () {
+      expect(normalizer.shortName('Game (USA) (Revenge)'), 'game revenge');
+      expect(normalizer.shortName('Game (USA) (Vol. 2)'), 'game vol 2');
+      expect(
+        normalizer.shortName('Game (USA) (V.Smile)'),
+        'game v smile',
+      );
     });
 
     test('keeps edition qualifiers, so both variants survive 1G1R', () {

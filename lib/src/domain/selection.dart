@@ -118,9 +118,57 @@ final class TitleNormalizer {
 
   static final _tag = RegExp(r'\(([^)]*)\)');
 
-  /// The patterns `DatLoader` turns into `GameMetadata.revision`. Kept out of
-  /// the key so revisions of one title compete and `GameScore` picks the newer.
-  static final _version = RegExp(r'^(?:Rev\s+[0-9A-Za-z]+|v[0-9]+(?:\.[0-9]+)*)$');
+  /// Tag contents Retool's `remove_tags()` strips before comparing titles, so
+  /// dump variants of one release share a clone key and compete for the 1G1R
+  /// slot instead of each becoming its own group — `(Alt)` is the common case.
+  ///
+  /// Ported from the `versions`, `preproduction`, `unl_group`, `dates` and
+  /// video-standard tuples in `titletools.py`; those live in Retool's source,
+  /// not in the metadata repo, so they can't drift out from under us.
+  ///
+  /// Deliberately not ported from that tuple: the platform serial and mastering
+  /// codes (PlayStation/Nintendo product IDs, Sega ring codes, Benesse IDs) and
+  /// `long_version`. They need per-system validation, and a pattern that is too
+  /// broad merges two genuinely different games.
+  static final _dumpVariant = <RegExp>[
+    // Versions.
+    RegExp(r'^Rev(?:[ -][0-9A-Za-z].*)?$', caseSensitive: false),
+    RegExp(r'^v[.0-9](?:(?!Smile).)*$', caseSensitive: false),
+    RegExp(r'^Build [0-9].*$', caseSensitive: false),
+    RegExp(r'^Alt.*$', caseSensitive: false),
+    RegExp(r'^DV [0-9].*$', caseSensitive: false), // Famicom Disk System
+    RegExp(r'^FW[0-9].*$', caseSensitive: false), // PlayStation firmware
+    RegExp(r'^USE[0-9]$', caseSensitive: false), // HyperScan
+    // Preproduction.
+    RegExp(r'^(?:\w*?\s)*Alpha(?:\s\d+)?$', caseSensitive: false),
+    RegExp(r'^(?:\w*?\s)*Beta(?:\s\d+)?$', caseSensitive: false),
+    RegExp(r'^(?:\w*?\s)*Proto(?:type)?(?:\s\d+)?$', caseSensitive: false),
+    RegExp(r'^(?:Pre-production|Prerelease)$', caseSensitive: false),
+    RegExp(r'^(?:DEV|DEBUG|Debug Build)$', caseSensitive: false),
+    // Unlicensed group.
+    RegExp(r'^(?:Aftermarket|Pirate|Unl)$', caseSensitive: false),
+    // Other tags Retool keeps out of the key.
+    RegExp(r'^(?:\w-?\s*)*?OEM$', caseSensitive: false),
+    RegExp(r'^Rerelease$', caseSensitive: false),
+    RegExp(r'^Review (?:Code|Kit [0-9]+)$', caseSensitive: false),
+    RegExp(r'^Magazine$', caseSensitive: false),
+    // Video standards.
+    RegExp(r'^(?:MPAL|NTSC|NTSC-PAL|SECAM)$', caseSensitive: false),
+    RegExp(r'^PAL(?:\s(?:\w+|50[Hh]z|60[Hh]z))?$', caseSensitive: false),
+    // Dates.
+    RegExp(r'^\d{8}$'),
+    RegExp(r'^\d{4}-\d{2}-\d{2}(?:T\d{6})?$'),
+    RegExp(r'^\d{2}-\d{2}-\d{4}$'),
+    RegExp(r'^\d{2}-\d{2}-\d{2}$'),
+    RegExp(r'^~?\d{4}-\d{2}-xx$', caseSensitive: false),
+    RegExp(r'^~?\d{4}-xx-xx$', caseSensitive: false),
+    RegExp(r'^\d{1,2}-\d{1,2}$'),
+    RegExp(
+      r'^(?:January|February|March|April|May|June|July|August|September'
+      r'|October|November|December),\s?\d{4}$',
+      caseSensitive: false,
+    ),
+  ];
 
   /// The normalized clone key for a DAT game name.
   String shortName(String fullName) {
@@ -134,8 +182,10 @@ final class TitleNormalizer {
     return normalizeName(name);
   }
 
-  bool _isDropped(String tag) =>
-      _version.hasMatch(tag.trim()) || _isRegionOrLanguage(tag);
+  bool _isDropped(String tag) {
+    final t = tag.trim();
+    return _isRegionOrLanguage(t) || _dumpVariant.any((p) => p.hasMatch(t));
+  }
 
   /// True when every comma-separated part of a tag is a known region, or every
   /// part is a language code.
@@ -285,8 +335,8 @@ final class ScoringConfig {
   final bool preferChd;
 }
 
-/// The comparable 1G1R outcome, evaluated in the agreed precedence:
-/// clonelist priority → production status → language → region → RA → revision.
+/// The comparable 1G1R outcome, evaluated in the agreed precedence: clonelist
+/// priority → production status → language → region → variant → RA → revision.
 ///
 /// Sorting ascending puts the winner first.
 final class GameScore implements Comparable<GameScore> {
@@ -297,6 +347,7 @@ final class GameScore implements Comparable<GameScore> {
     required this.regionRank,
     required this.hasRetroAchievements,
     required this.revision,
+    this.variantRank = 0,
   });
 
   final int cloneListPriority;
@@ -305,6 +356,10 @@ final class GameScore implements Comparable<GameScore> {
   final int regionRank;
   final bool hasRetroAchievements;
   final int revision;
+
+  /// "Original over alternative" penalty; 0 for an untagged release. See
+  /// [ScoringEngine.variantRank].
+  final int variantRank;
 
   @override
   int compareTo(GameScore other) {
@@ -315,6 +370,9 @@ final class GameScore implements Comparable<GameScore> {
     c = languageRank.compareTo(other.languageRank);
     if (c != 0) return c;
     c = regionRank.compareTo(other.regionRank);
+    if (c != 0) return c;
+    // Retool step 13: an original beats its alternative/OEM/rerelease dumps.
+    c = variantRank.compareTo(other.variantRank);
     if (c != 0) return c;
     // Prefer RA support as a tie-break (smart merge).
     c = (other.hasRetroAchievements ? 1 : 0) - (hasRetroAchievements ? 1 : 0);
@@ -337,10 +395,34 @@ final class ScoringEngine {
       status: g.metadata.status,
       languageRank: _rank(config.languagePriority, g.metadata.languages),
       regionRank: _rank(config.regionPriority, g.metadata.regions),
+      variantRank: variantRank(g.name),
       hasRetroAchievements:
           config.preferRetroAchievements && g.supportsRetroAchievements,
       revision: g.metadata.revision,
     );
+  }
+
+  /// Tags that mark a title as an alternative to an original release, in
+  /// Retool's order of precedence (`choose_1g1r.py` step 13, "choose original
+  /// versions over alternatives").
+  static final _variantTags = <RegExp>[
+    RegExp(r'\(Alt.*?\)', caseSensitive: false),
+    RegExp(r'\((?:\w-?\s*)*?OEM\)', caseSensitive: false),
+    RegExp(r'\((?:Hibaihin|Not for Resale)\)', caseSensitive: false),
+    RegExp(r'\(Covermount\)', caseSensitive: false),
+    RegExp(r'\(Rerelease\)', caseSensitive: false),
+  ];
+
+  /// A bitmask over [_variantTags], most significant bit first, so one integer
+  /// comparison reproduces Retool's ordered chain of `choose_string` filters.
+  /// 0 means "no alternative tag", which always wins.
+  static int variantRank(String gameName) {
+    var rank = 0;
+    for (final tag in _variantTags) {
+      rank <<= 1;
+      if (tag.hasMatch(gameName)) rank |= 1;
+    }
+    return rank;
   }
 
   List<GameCandidate> selectBest(
@@ -353,7 +435,14 @@ final class ScoringEngine {
     }
     final winners = <GameCandidate>[];
     for (final group in byGroup.values) {
-      group.sort((a, b) => score(a, config).compareTo(score(b, config)));
+      group.sort((a, b) {
+        final c = score(a, config).compareTo(score(b, config));
+        if (c != 0) return c;
+        // Retool step 19: fail-safe so a tie resolves the same way every run,
+        // whatever order the DAT listed the clones in. `choose_highest_string`
+        // keeps the higher name.
+        return b.game.name.compareTo(a.game.name);
+      });
       winners.add(group.first);
     }
     return winners;
