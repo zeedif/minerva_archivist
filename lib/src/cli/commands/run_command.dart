@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:path/path.dart' as p;
 
 import '../../data/archive_source.dart';
 import '../../data/aria2_client.dart';
@@ -101,8 +102,10 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
         stdout.writeln('\n=== ${dat.header.name} [${dat.header.flavor.name}] ===');
 
         var target = dat;
+        SelectedTarget? selected;
         if (active('select')) {
           final result = await selection.select(dat);
+          selected = (dat: dat, selection: result);
           target = DatFile(header: dat.header, games: result.games);
           final why = result.stats.reasons;
           stdout.writeln(
@@ -118,40 +121,90 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
                 active('organize') ||
                 active('m3u') ||
                 active('prune'));
-        var report =
-            needsReport ? await auditor.audit(dat: target, romRoot: root) : null;
+        // The full DAT is the catalog, so a curated folder holding a variant
+        // that lost its 1G1R slot is recognized rather than read as junk.
+        var report = needsReport
+            ? await auditor.audit(dat: target, romRoot: root, catalog: dat)
+            : null;
         if (report != null && active('audit')) {
           stdout.writeln(
             '[audit] ${report.present.length}/${target.games.length} on disk, '
             '${report.missing.length} missing, '
             '${report.unknownFiles.length} unknown',
           );
+          stdout.writeln('[audit] ${report.library.summary}');
         }
 
+        // What this run fetched, so prune can tell it from the collection's own
+        // strays and never quarantine work just done.
+        var fetched = const <File>[];
         if (active('download')) {
-          final wanted = report != null
+          var wanted = report != null
               ? [for (final a in report.missing) a.game]
               : target.games;
-          final didDownload = await _download(dat, wanted, romRoot, apply, r);
+          if (report != null && selected != null) {
+            final settled = selected.settledByCuratedGroup(report);
+            final held = [for (final g in wanted) if (settled.contains(g.name)) g];
+            if (held.isNotEmpty) {
+              wanted = [for (final g in wanted) if (!settled.contains(g.name)) g];
+              stdout.writeln(
+                '[download] ${held.length} skipped: another dump of the same '
+                'game is already settled in a curated folder',
+              );
+              for (final g in held) {
+                stdout.writeln('           - ${g.name}');
+              }
+            }
+          }
+          fetched = await _download(dat, wanted, romRoot, apply, r);
           // Re-audit so organize/m3u/prune see the freshly flattened files.
-          if (didDownload && root != null) {
-            report = await auditor.audit(dat: target, romRoot: root);
+          if (fetched.isNotEmpty && root != null) {
+            report = await auditor.audit(
+              dat: target,
+              romRoot: root,
+              catalog: dat,
+            );
             stdout.writeln(
               '[audit] ${report.present.length}/${target.games.length} on disk, '
               '${report.missing.length} missing',
             );
+            // A fetched file the re-audit cannot place holds bytes this DAT does
+            // not describe — what a re-hashed flavor audited against a torrent of
+            // original dumps yields for every title. Reported rather than left to
+            // be inferred from a download and a prune that never meet.
+            final strays = {for (final f in fetched) p.canonicalize(f.path)}
+                .intersection({
+                  for (final f in report.unknownFiles) p.canonicalize(f.path),
+                });
+            if (strays.isNotEmpty) {
+              stdout.writeln(
+                '[download] ${strays.length} fetched file(s) hash to nothing in '
+                'this DAT, so they stay missing. Kept, not pruned:',
+              );
+              for (final path in strays) {
+                stdout.writeln('           ! ${p.basename(path)}');
+              }
+            }
           }
         }
         if (report != null && root != null && active('organize')) {
           final actions = await const EsdeRomOrganizer().organize(
             present: report.present,
             romRoot: root,
+            config: organizeConfig.protecting(report.library.curatedFolders),
+            dryRun: !apply,
+          );
+          // Curated folders are skipped above; names inside them are still
+          // brought in line, without anything leaving the folder.
+          final renames = await const CuratedFolderRenamer().rename(
+            report: report,
+            romRoot: root,
             config: organizeConfig,
             dryRun: !apply,
           );
-          stdout.writeln('[organize] ${actions.summary}'
-              '${apply ? "" : " (dry run)"}');
-          for (final f in actions.where((a) => a.op == OrganizeOp.failed)) {
+          final all = [...actions, ...renames];
+          stdout.writeln('[organize] ${all.summary}${apply ? "" : " (dry run)"}');
+          for (final f in all.where((a) => a.op == OrganizeOp.failed)) {
             stderr.writeln('           ! ${f.game}: ${f.error}');
           }
         }
@@ -167,10 +220,28 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
           final moved = await const TrashPruner().prune(
             report: report,
             romRoot: root,
-            protectedFolders: organizeConfig.protectedFolders,
+            protectedFolders: organizeConfig
+                .protecting(report.library.curatedFolders)
+                .protectedFolders,
+            keep: {for (final f in fetched) p.canonicalize(f.path)},
             dryRun: !apply,
           );
           stdout.writeln('[prune] ${moved.length} orphan(s)${apply ? "" : " (dry run)"}');
+          // Named, not just counted: a wrong move has to be visible in the run
+          // that made it rather than in a later directory listing.
+          for (final f in moved) {
+            stdout.writeln('           - ${p.relative(f.path, from: p.join(root.path, trashFolderName))}');
+          }
+          final twinned = report.duplicatesInCuratedFolders(root);
+          if (twinned.isNotEmpty) {
+            stdout.writeln(
+              '[prune] ${twinned.length} duplicate(s) left alone inside curated '
+              'folders — merge them by hand to drop the extra copy:',
+            );
+            for (final f in twinned) {
+              stdout.writeln('           = ${p.relative(f.path, from: root.path)}');
+            }
+          }
         }
       }
     }
@@ -178,8 +249,9 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
     return 0;
   }
 
-  /// Returns true if a real download completed (so the caller should re-audit).
-  Future<bool> _download(
+  /// The files a completed download just landed in the ROM root, empty when
+  /// nothing was fetched (so the caller knows to skip the re-audit).
+  Future<List<File>> _download(
     DatFile dat,
     Iterable<DatGame> wanted,
     String? romRoot,
@@ -207,7 +279,7 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
       for (final u in plan.unmatched) {
         stdout.writeln('           ? not in torrent: $u');
       }
-      if (!apply || plan.selectedFiles.isEmpty) return false;
+      if (!apply || plan.selectedFiles.isEmpty) return const [];
 
       final saveDir = Directory(romRoot ?? Directory.current.path);
       final client = Aria2TorrentClient(aria2Path: r.option('aria2')!);
@@ -233,25 +305,25 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
         await client.dispose();
       }
 
-      if (completed) {
-        final keep = {
-          for (final f in plan.selectedFiles) f.path.split('/').last.toLowerCase(),
-        };
-        final result = await const TorrentRelocator().flatten(
-          romRoot: saveDir,
-          topDir: manifest.name,
-          keepBasenames: keep,
-        );
-        stdout.writeln(
-          '[download] flattened ${result.moved.length} selected, '
-          'discarded ${result.discarded} boundary file(s); '
-          'removed ${result.removedControlFiles} control file(s).',
-        );
-      }
-      return completed;
+      if (!completed) return const [];
+
+      final keep = {
+        for (final f in plan.selectedFiles) f.path.split('/').last.toLowerCase(),
+      };
+      final result = await const TorrentRelocator().flatten(
+        romRoot: saveDir,
+        topDir: manifest.name,
+        keepBasenames: keep,
+      );
+      stdout.writeln(
+        '[download] flattened ${result.moved.length} selected, '
+        'discarded ${result.discarded} boundary file(s); '
+        'removed ${result.removedControlFiles} control file(s).',
+      );
+      return result.moved;
     } catch (e) {
       stderr.writeln('[download] failed: $e');
-      return false;
+      return const [];
     } finally {
       source.close();
     }

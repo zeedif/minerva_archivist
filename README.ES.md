@@ -35,15 +35,15 @@ y se cachean en local.
 
 - **Lee cualquier DAT.** Detecta si es No-Intro, Redump o MAME-Redump CHD a
   partir del propio archivo, sin banderas de tipo.
-- **Elige un juego por título.** Prioridad del clonelist → estado de producción →
-  idioma → región → RetroAchievements → revisión, con las tablas de región e
-  idioma originales.
-- **Descarta lo que no quieres.** Prototipos, betas, demos, piratas, volcados
-  MIA; aplicaciones, BIOS, manuales, coverdiscs, vídeo; y títulos que no hablan
-  tus idiomas.
-- **Conserva lo que sí.** Una lista de deseos (consciente de los grupos de
-  clones: nombrar un título arrastra todo su grupo) combinada con el filtro de
-  RetroAchievements.
+- **Elige un juego por título.** Estado de producción → idioma → región → logros →
+  prioridad del clonelist → revisión, y un pack multijuego responde por todo lo
+  que contiene en vez de duplicarlo.
+- **Descarta lo que no quieres.** Una sola lista `--exclude` cubre prototipos,
+  betas, discos de prueba, discos extra, piratas, volcados MIA, aplicaciones,
+  BIOS, manuales, coverdiscs y vídeo, reconocidos por categoría o por nombre.
+- **Conserva lo que sí.** Nombrar un idioma o una región te da ese conjunto; la
+  lista de deseos y el filtro de logros nombran el suyo, y dicen si se suman o se
+  acotan entre ellos.
 - **Descarga solo los huecos.** Cruza los juegos que faltan contra el torrent de
   la plataforma y le pasa a `aria2c` únicamente esos archivos.
 - **Ordena al terminar.** Cuatro disposiciones compatibles con ES-DE, listas
@@ -92,9 +92,8 @@ demos ni BIOS, bajando lo que falte:
 
 ```sh
 minerva_archivist run -d <dat-o-carpeta> -r <raiz-roms> \
-  -l --lang Es,En,Ja \
-  --exclude-status mia,prototype,beta,demo,pirate \
-  --exclude-category "Applications,BIOS,Manuals,Video" \
+  --lang Es,En,Ja \
+  --exclude mia,preproduction,demos,pirate,bonus-discs,applications,bios,manuals,video \
   --with-download --extract --apply
 ```
 

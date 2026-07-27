@@ -676,17 +676,29 @@ final class RemoteMetadataRepository implements MetadataRepository {
       regionImpliedLanguages: regionImplied,
       defaultVideoOrder: video,
       datFileTags: strings('datFileTags'),
-      ignoreTags: _ignoreTags(json['ignoreTags']),
+      versionIgnore: strings('versionIgnore'),
+      ignoreTags: _tagPatterns(json['ignoreTags']),
+      budgetEditions: _tagPatterns(json['budgetEditions']),
+      demoteEditions: _tagPatterns(json['demoteEditions']),
+      modernEditions: _tagPatterns(json['modernEditions']),
+      promoteEditions: _tagPatterns(json['promoteEditions']),
     );
   }
 
-  /// `ignoreTags` is a list of `[pattern, "string"|"regex"]` pairs; literal
-  /// entries are returned verbatim (escaped at use) and regexes as written.
-  List<String> _ignoreTags(Object? raw) {
+  /// A list of `[pattern, "string"|"regex"]` pairs. An entry that declares
+  /// neither is read as a literal, which is the safe reading: escaped, it can
+  /// only ever match itself.
+  List<TagPattern> _tagPatterns(Object? raw) {
     if (raw is! List) return const [];
     return [
       for (final e in raw)
-        if (e is List && e.isNotEmpty) e.first.toString(),
+        if (e is List && e.isNotEmpty)
+          TagPattern(
+            e.first.toString(),
+            isRegex: e.length > 1 && e[1].toString() == 'regex',
+          )
+        else if (e is String)
+          TagPattern(e),
     ];
   }
 
@@ -699,9 +711,8 @@ final class RemoteMetadataRepository implements MetadataRepository {
           group: v['group']?.toString() ?? '',
           titles: _titles(v['titles']),
           compilations: _titles(v['compilations']),
-          categories:
-              (v['categories'] as List?)?.map((e) => e.toString()).toList() ??
-              const [],
+          supersets: _titles(v['supersets']),
+          categories: _strings(v['categories']) ?? const [],
         ),
       );
     }
@@ -713,21 +724,76 @@ final class RemoteMetadataRepository implements MetadataRepository {
     final out = <VariantTitle>[];
     for (final e in raw) {
       if (e is! Map) continue;
-      final localNames = e['localNames'];
       out.add(
         VariantTitle(
           searchTerm: e['searchTerm']?.toString() ?? '',
+          match: _titleMatch(e['nameType']),
           priority: (e['priority'] as num?)?.toInt(),
           titlePosition: (e['titlePosition'] as num?)?.toInt(),
-          filters: e['filters'],
-          localNames: localNames is Map
-              ? localNames.map((k, v) => MapEntry(k.toString(), v.toString()))
-              : null,
+          categories: _strings(e['categories']),
+          englishFriendly: e['englishFriendly'] == true,
+          filters: _filters(e['filters']),
+          localNames: _localNames(e['localNames']),
         ),
       );
     }
     return out;
   }
+
+  /// An unrecognized `nameType` falls back to `short`, as upstream does.
+  TitleMatch _titleMatch(Object? raw) => switch (raw?.toString()) {
+    'full' => TitleMatch.full,
+    'regionFree' => TitleMatch.regionFree,
+    'regex' => TitleMatch.regex,
+    _ => TitleMatch.short,
+  };
+
+  /// A `filters` entry missing either half is dropped: upstream warns and makes
+  /// no change, and a filter with no conditions would fire on every title.
+  List<VariantFilter> _filters(Object? raw) {
+    if (raw is! List) return const [];
+    final out = <VariantFilter>[];
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final conditions = e['conditions'];
+      final results = e['results'];
+      if (conditions is! Map || results is! Map) continue;
+      out.add(
+        VariantFilter(
+          conditions: FilterConditions(
+            matchRegions: _strings(conditions['matchRegions']) ?? const [],
+            matchLanguages: _strings(conditions['matchLanguages']) ?? const [],
+            matchString: conditions['matchString']?.toString(),
+            regionOrder: _regionOrder(conditions['regionOrder']),
+          ),
+          results: FilterResults(
+            group: results['group']?.toString(),
+            priority: (results['priority'] as num?)?.toInt(),
+            categories: _strings(results['categories']),
+            localNames: _localNames(results['localNames']),
+            englishFriendly: results['englishFriendly'] as bool?,
+            superset: results['superset'] as bool?,
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  RegionOrderCondition? _regionOrder(Object? raw) {
+    if (raw is! Map) return null;
+    return RegionOrderCondition(
+      higherRegions: _strings(raw['higherRegions']) ?? const [],
+      lowerRegions: _strings(raw['lowerRegions']) ?? const [],
+    );
+  }
+
+  Map<String, String>? _localNames(Object? raw) => raw is Map
+      ? raw.map((k, v) => MapEntry(k.toString(), v.toString()))
+      : null;
+
+  List<String>? _strings(Object? raw) =>
+      raw is List ? [for (final e in raw) e.toString()] : null;
 
   SystemMetadata _parseMetadata(Map<String, dynamic> json) {
     final byTitle = <String, TitleMetadata>{};

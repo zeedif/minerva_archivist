@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:minerva_archivist/minerva_archivist.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 AuditedRom _present(String game, File file) => AuditedRom(
@@ -216,6 +217,31 @@ void main() {
       expect(File('${tmp.path}/.trash/junk.bin').existsSync(), isTrue);
       expect(orphan.existsSync(), isFalse);
       expect(modFile.existsSync(), isTrue);
+    });
+
+    test('pruner spares what the run just downloaded', () async {
+      // A dump whose bytes this DAT flavor cannot describe audits as unknown.
+      // Trashing it would undo the download that fetched it seconds earlier,
+      // and the next run would fetch it again.
+      final justFetched = File('${tmp.path}/Fresh (USA).zip')
+        ..writeAsStringSync('z');
+      final stray = File('${tmp.path}/old junk.bin')..writeAsStringSync('x');
+      final report = AuditReport(
+        dat: const DatFile(
+          header: DatHeader(name: 't', flavor: DatFlavor.noIntro),
+          games: [],
+        ),
+        results: const [],
+        unknownFiles: [justFetched, stray],
+      );
+      final moved = await const TrashPruner().prune(
+        report: report,
+        romRoot: tmp,
+        keep: {p.canonicalize(justFetched.path)},
+      );
+      expect(moved.length, 1);
+      expect(justFetched.existsSync(), isTrue);
+      expect(stray.existsSync(), isFalse);
     });
   });
 }

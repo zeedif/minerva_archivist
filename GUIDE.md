@@ -34,65 +34,78 @@ Exit codes: `0` ok · `64` bad usage · `70` runtime failure (e.g. `aria2c` miss
 ## Selection options
 
 Shared by `filter`, `audit`, `download`, `organize`, `m3u`, `prune` and `run`.
-They decide *which* games a command acts on. Multi-value options accept commas
-or repetition.
+They decide *which* games a command acts on.
 
 | Option | Meaning |
 |---|---|
-| `--lang <codes>` | Language priority, best first. Default `En` |
-| `-l, --filter-languages` | Also **drop** titles that speak none of `--lang` |
-| `--wishlist <path>` | JSON/JSONC array of game names to keep |
-| `-a, --retroachievements` | Keep titles with RetroAchievements support |
-| `--combine or\|and` | How wishlist and RA combine. Default `or` |
-| `--exclude-status <list>` | Drop these production statuses |
-| `--exclude-category <list>` | Drop these categories |
+| `--lang <codes>` | Language priority, best first. Ranks and restricts. Default `En` |
+| `--region <names>` | Region priority, best first. Ranks and restricts |
+| `--priority <axes>` | Which tie-breaks decide a clone group. Default `lang,region,ra` |
+| `--wishlist <path>` | JSON/JSONC array of game names to select |
+| `--wishlist-mode absolute\|subset` | What naming a title claims. Default `absolute` |
+| `--achievements any\|approved` | Select only titles with achievements |
+| `--supersets prefer\|ignore` | What a pack is worth against its contents. Default `prefer` |
+| `--exclude <kinds>` | Drop these kinds of dump outright |
 
-### `--lang` and `-l`
+### `--lang` and `--region`
 
-On its own, `--lang` only **ranks**: when a group has a Spanish and an English
-release, Spanish wins — but a French-only game is still kept, because nothing
-better exists in that group.
+Both **rank and restrict**: they order the dumps of a title, and a title that
+answers to nothing on the list is dropped. So naming one value gives you that
+segment — `--lang Es` is the Spanish set, `--region Spain` the Spanish-release
+set — and naming several orders them.
 
-`-l` turns it into a **filter** as well: titles that speak none of your languages
-are removed outright. Titles whose language is unknown are kept, since there's
-nothing to judge them on.
+Rather than spell out every value, two entries stand in for the rest and rank
+wherever you put them:
 
-```sh
-# Spanish preferred, but everything is kept
-minerva_archivist filter -d <dat> --lang Es,En
+| Entry | Covers |
+|---|---|
+| `Other` | Any value the list doesn't name, plus missing values unless `Unknown` is listed |
+| `Unknown` | Titles the DAT says nothing about on that axis |
 
-# Spanish or English only — French/German/etc. are dropped
-minerva_archivist filter -d <dat> -l --lang Es,En
-```
-
-Regional variants match their base code: asking for `Es` accepts `Es-MX`.
-
-### `--exclude-status`
-
-Accepts: `released`, `prototype`, `beta`, `alpha`, `demo`, `sample`, `pirate`,
-`unlicensed`, `mia`.
-
-`mia` means the dump is known to exist but has never been preserved — excluding
-it stops the tool chasing files nobody has.
+`Other` is one slot, so values sharing it fall back on a full built-in order —
+region on `USA, World, Canada, Europe, UK, …`, language on what that implies —
+rather than resolving arbitrarily.
 
 ```sh
---exclude-status mia,prototype,beta,alpha,demo,sample,unlicensed,pirate
+# only Spanish
+minerva_archivist filter -d <dat> --lang Es
+
+# Spanish, then English, then everything else
+minerva_archivist filter -d <dat> --lang Es,En,Other
+
+# Spain and the Americas first, the rest still welcome
+minerva_archivist filter -d <dat> --region Spain,USA,Europe,Other
 ```
 
-### `--exclude-category`
+`--lang` entries cover their subtags: asking for `Es` accepts `Es-MX`. Left unset,
+`--region` uses the full built-in order, which lists every region and so drops
+nothing; untagged titles count as `Unknown`.
 
-Case-insensitive substring match against a game's categories, which come from the
-DAT's `<category>` element **and** from its clonelist group. That second source
-matters: No-Intro DATs carry no categories at all, so test cartridges and
-utilities are only recognisable via the clonelist.
+### `--priority`
 
-Common values: `Applications`, `Audio`, `BIOS`, `Bonus Discs`, `Coverdiscs`,
-`Demos`, `Educational`, `Games`, `Manuals`, `Multimedia`, `Pirate`,
-`Preproduction`, `Promotional`, `Unlicensed`, `Video`.
+Language, region and achievements pull against each other: preferring your
+language can cost you the dump that carries achievements, and the reverse.
+`--priority` says which wins, best first.
 
-```sh
---exclude-category "Applications,Audio,BIOS,Coverdiscs,Educational,Manuals,Multimedia,Promotional,Video"
-```
+| Value | Effect |
+|---|---|
+| `lang,region,ra` | Default. Your language wins; achievements only break ties |
+| `ra,lang` | The dump with achievements wins, even in another language |
+| `lang,ra` | Language first, then achievements; region stops outranking either |
+
+`lang` and `ra` left out drop from the ranking entirely. **`region` does not**: it
+keeps a fixed place below whatever you did list, because nothing else in the chain
+can decide between two regions and a cross-region tie would otherwise be settled
+by spelling. Omitting it means it must not outrank your language or achievements.
+
+Worth knowing before you put `ra` first: a Spanish-capable European dump usually
+has no achievements — those are validated against the USA release — so `ra,lang`
+will pass over the very dump your translation patch was made for.
+
+Below whatever you listed, the order is fixed: supersets, region, clonelist
+priority, modern editions (a Virtual Console or console rip loses to the original),
+budget editions (a re-release wins; it usually carries the fixes), revision,
+`(Alt)`/OEM, then the promotion and demotion lists.
 
 ### Wishlist
 
@@ -102,21 +115,110 @@ A JSON/JSONC array of base game names:
 [
   "Chrono Trigger",
   "Final Fantasy VII",
-  "Bomber Boy"   // also pulls its clone group
+  "Bomber Boy"   // any of a title's regional spellings will do
 ]
 ```
 
 Matching ignores case, punctuation, a leading/trailing "The", and region/format
-tags. It is exact-after-normalisation, not substring — use full base titles.
-Naming any title in a clone group selects the whole group.
+tags. It is exact after that, not substring — use full base titles. Naming any
+release of a game selects the game, and the orders then pick its best dump, so
+your spelling never decides which region you end up with. Naming a multi-game
+pack asks for the pack rather than for each title on it.
 
-Combine with RetroAchievements from the CLI, not the file:
+#### `--wishlist-mode`
+
+A wishlist can be two things, and one answer settles both halves of it.
+
+**`absolute`** (default) — a set of its own, ranked **above** `--lang` and
+`--region`. Everything you named is selected; those orders only choose which of
+its dumps you get. This is what makes a Japanese-only title survive `--lang Es,En`,
+which is exactly what you want when you name it in order to apply a translation
+patch. And since it outranks the orders, it would be perverse to then drop it for
+carrying no achievements — so `--achievements` **adds** to it instead:
 
 ```sh
---wishlist <path> -a --combine or    # wishlisted OR has achievements
---wishlist <path> -a --combine and   # wishlisted AND has achievements
+--wishlist <path> --achievements any   # my wishlist, plus everything with achievements
 ```
 
+**`subset`** — one condition among the others. A named title still has to speak a
+ranked language, come from a ranked region and meet `--achievements`, which
+therefore **narrows** the wishlist:
+
+```sh
+--wishlist <path> --wishlist-mode subset --achievements any   # only the wishlisted titles that have achievements
+```
+
+### `--achievements`
+
+Omit it and achievements restrict nothing — `--priority ra` still ranks them.
+Given, it names the set you want, at the scale you want it:
+
+| Value | Keeps |
+|---|---|
+| `any` | Titles with achievements on any of their dumps, leaving `--priority` to choose which dump represents them |
+| `approved` | Only the dumps the achievement set was authored against, so the approved dump is the one that wins its group |
+
+A dump is joined two ways, worth different amounts: a **hash** join proves the set
+was authored against exactly those bytes, a **name** join only says a title so
+named is covered. `approved` accepts only the first, and the `ra` tie-break
+prefers it. `--explain` marks which each dump got:
+
+```
+WIN Dragon Quest - The Hand of the Heavenly Bride (Europe)  [...]  ra:name
+    Dragon Quest V - Hand of the Heavenly Bride (USA)       [...]
+```
+
+Two caveats. RetroAchievements covers no Xbox, Xbox 360, PS3, 3DS or Vita, so
+`--achievements` selects nothing there. And on disc systems the sets are hashed
+against the disc's executable rather than the image, so every join is by name and
+`approved` selects nothing — it is a cartridge-era tool.
+
+### Packs and `--supersets`
+
+A clonelist lists a multi-game pack under **every** group it contains, so the pack
+stands for all of them. It competes for the slot of each game inside it and,
+winning, fills it — you get the pack, not the pack plus loose copies of what is
+already on it.
+
+| Mode | Effect |
+|---|---|
+| `prefer` | Default. The pack answers for its contents and takes their slots |
+| `ignore` | Each group goes to a release of its own; the pack only fills groups nothing else covers |
+
+Naming one of the titles a pack holds gets you the pack under `prefer`, or that
+release under `ignore`.
+
+The same applies to a subsuming edition: a deluxe or tournament edition that
+contains the original release represents its group and beats a plain release, a
+higher revision of one, and a dump from a region you rank above it.
+
+### Re-releases are not separate games
+
+`Mario Kart 64 (USA)` and `Mario Kart 64 (USA) (LodgeNet)` are one game. Edition
+tags are stripped when building a clone key, so the two compete for one slot
+instead of both being kept and both downloaded — that covers `(LodgeNet)`,
+`(Wii Virtual Console)`, `(Switch Online)`, `(Greatest Hits)` and some hundreds
+more.
+
+### `--exclude`
+
+Always applies, the wishlist included: naming a game must not quietly re-admit its
+prototype or its manual.
+
+Accepts `add-ons`, `applications`, `audio`, `bad-dumps`, `bios`, `bonus-discs`,
+`coverdiscs`, `demos`, `educational`, `manuals`, `mia`, `multimedia`, `pirate`,
+`preproduction`, `promotional`, `unlicensed`, `video`.
+
+```sh
+--exclude mia,preproduction,demos,unlicensed,pirate,bonus-discs,applications,bios,coverdiscs,educational,manuals,multimedia,promotional,video
+```
+
+Each kind is recognised three ways at once — the DAT's `<category>`, the
+clonelist's, and the name — so a trial disc counts as a demo however it is
+spelled, in Japanese or Korean included. That matters because No-Intro DATs carry
+no categories at all, leaving the name the only signal. `mia` means the dump is
+known to exist but has never been preserved; excluding it stops the tool chasing
+files nobody has.
 ---
 
 ## Commands
@@ -149,15 +251,37 @@ nothing.
 
 ```sh
 minerva_archivist filter -d <dat>
-minerva_archivist filter -d <dat> -a -l --lang En,Ja
-minerva_archivist filter -d <dat> --wishlist <path> -a --combine and
+minerva_archivist filter -d <dat> --achievements any --lang En,Ja
+minerva_archivist filter -d <dat> --wishlist <path> --wishlist-mode subset --achievements any
 ```
 
 Output is a funnel — the total, the survivors, and what each stage removed:
 
 ```
-<system> [noIntro]: 404 -> 309  (status -89, language -6)
+<system> [noIntro]: 404 -> 309  (exclude -89, language -6)
 ```
+
+| Option | Meaning |
+|---|---|
+| `--list` | Print every selected game name |
+| `--explain <text>` | For each game whose name contains `<text>`, print its clone group and whether it won |
+
+`--explain` answers "why do I have two of these, or none": it shows what
+competed for the slot.
+
+```sh
+minerva_archivist filter -d <dat> --explain "Bomberman 64"
+```
+
+```
+  --- Bomberman 64
+          Bomberman 64 (Europe)  [bomberman 64]
+      WIN Bomberman 64 (USA)  [bomberman 64]
+      WIN Bomberman 64 (Japan)  [bomberman 64 japan]
+```
+
+Two winners because the clonelist splits the Japanese release into its own
+group — it is a different game, not a regional variant.
 
 ### `audit`
 
@@ -170,10 +294,22 @@ minerva_archivist audit -d <dat> -r <rom-root> --no-hash --no-chd
 
 | Option | Meaning |
 |---|---|
-| `--[no-]hash` | Verify by hashing. `--no-hash` is a fast name/size pass. Default on |
+| `--[no-]hash` | Verify by hashing. Default on. `--no-hash` reads no files at all, so everything reports as missing — it only shows the selection funnel |
 | `--[no-]chd` | Accept a local `.chd` for a raw Redump entry. Default on |
 
 Files inside `.trash` are ignored — a quarantined copy doesn't count as owned.
+
+The audit reads files against the **whole** DAT, not just the selection, so a
+dump that lost its 1G1R slot is still identified. That is what makes a
+[curated folder](#curated-folders) holding a runner-up legible instead of looking
+like a pile of junk. It reports which folders it found, and which games it will
+therefore not fetch:
+
+```
+  18 curated of 18 folder(s), 9 game(s) settled there
+  curated: 007 - The World Is Not Enough (Europe)  (1 rom(s), 2 of your own)
+  settled elsewhere, will not be fetched: 007 - The World Is Not Enough (USA)
+```
 
 ### `download`
 
@@ -234,9 +370,63 @@ minerva_archivist organize -d <dat> -r <rom-root> --folder-as-file --extract \
 | `--protect <name>` | Folder names never to touch. Repeatable |
 | `--apply` | Actually move files. Default is a dry run |
 
-Protected means: any folder named in `--protect`, plus any folder already holding
-user files (`.ips`, `.bps`, `.sav`, `.state`, …). A game whose destination can't
-be written is reported and skipped — it won't abort the run.
+A game whose destination can't be written is reported and skipped — it won't
+abort the run.
+
+#### Curated folders
+
+A folder is **curated** when it holds a dump *and* files of your own: patches,
+translations, manuals, cover scans, a `translations/` subfolder. Saves, states
+and `.m3u` playlists don't count — the tool wrote those itself.
+
+```
+Body Harvest (USA)/
+├── Body Harvest (USA).z64          <- the dump
+└── translations/
+    ├── ... (v0.98) (T-Es).z64      <- yours
+    └── ... (v0.98) (T-Es).txt      <- yours
+```
+
+Curated folders are detected by content, on every run, on top of anything
+`--protect` names. Nothing is moved out of one and nothing in one is pruned —
+those patches only make sense beside the dump they were built against.
+
+Two things still happen, because neither can disturb what you built:
+
+* a folder holding exactly one complete game is renamed to that game's name;
+* a ROM inside is renamed to its DAT name, staying in the same folder.
+
+A folder with **no** extra content is not curated: if it holds a dump the
+selection doesn't want, it is pruned like any loose file, and the folder goes
+with it once empty.
+
+#### Duplicate copies of the same dump
+
+Curation protects a folder, not the bytes inside it. Put a second copy of a
+curated dump loose in the root and it is redundant — 1G1R wants one of each —
+so it is pruned and the curated copy keeps the slot, patches and all:
+
+```
+Sagaia (Japan) (En)/
+├── Sagaia (Japan) (En).gb          <- kept
+└── translations/sagaia (T-Es).ips
+Sagaia (Japan) (En).gb              <- pruned, same bytes
+```
+
+Which copy keeps the slot is decided by content, not by scan order: a curated
+folder wins outright, then the file already named as the DAT names it, then the
+one nearest the root. Different dumps of one game in separate curated folders —
+three regional Ocarinas, each with its own translation — are not duplicates and
+nothing happens to them.
+
+The one case left alone is the same bytes under **two** curated folders. Which
+set of patches to keep is a judgement about your content, so the run only
+reports it:
+
+```
+[prune] 1 duplicate(s) left alone inside curated folders — merge them by hand
+        = Ocarina FR/Legend of Zelda (USA).z64
+```
 
 ### `m3u`
 
@@ -250,7 +440,8 @@ minerva_archivist m3u -d <dat> -r <rom-root> --apply
 
 Moves anything in `<rom-root>` that isn't part of the selection into `.trash`,
 preserving relative layout. It moves, never deletes, and never touches `.trash`
-itself or protected folders.
+itself, protected folders, or [curated folders](#curated-folders). A folder left
+empty by pruning is removed.
 
 ```sh
 minerva_archivist prune -d <dat> -r <rom-root>
@@ -270,8 +461,8 @@ minerva_archivist run -d <dat> -r <rom-root>
 
 # the works
 minerva_archivist run -d <dat> -r <rom-root> \
-  -l --lang Es,En,Ja --wishlist <path> -a --combine or \
-  --exclude-status mia,prototype,beta,demo \
+  --lang Es,En,Ja --wishlist <path> --achievements any \
+  --exclude mia,preproduction,demos \
   --with-download --aria2 <path> \
   --extract --protect Hacks --apply
 
@@ -299,7 +490,7 @@ files that just arrived.
 ## Reading the output
 
 ```
-[select] 404 in DAT -> 309 wanted  (status -89, language -6)
+[select] 404 in DAT -> 309 wanted  (exclude -89, language -6)
 [audit] 0/309 on disk, 309 missing, 0 unknown
 [download] 309 missing -> 303 in torrent, 6 not distributed, 102.5 MB
 [audit] 303/309 on disk, 6 missing
@@ -308,8 +499,8 @@ files that just arrived.
 ```
 
 - **select** — DAT total, survivors, and one entry per reason that removed
-  something. Reasons are `status`, `category`, `language`, `1g1r`, `wishlist/ra`;
-  they always add up to the difference.
+  something. Reasons are `exclude`, `language`, `region`, `1g1r`, `superset` and
+  `wishlist/ra`; they always add up to the difference.
 - **audit** — `on disk / wanted`. `unknown` counts files present that no selected
   game claims; those are what `prune` would move.
 - **download** — how many are missing, how many the archive actually carries, and
@@ -317,8 +508,7 @@ files that just arrived.
 
 ## Notes
 
-- The 1G1R engine mirrors Retool's, but Retool's region filter is not
-  implemented. If your Retool config restricts regions, use `-l` to get
-  equivalent results; a title from an excluded region with no language metadata
-  may still slip through.
+- Clonelists, metadata, achievement and MIA data are mirrored from the upstream
+  project `sync` points at. The 1G1R engine reimplements its grouping and scoring,
+  with the tie-break order yours to choose via `--priority`.
 - Selection is offline. Only `sync` and `download` need the network.

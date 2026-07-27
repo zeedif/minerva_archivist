@@ -34,92 +34,199 @@ Códigos de salida: `0` correcto · `64` uso incorrecto · `70` fallo en ejecuci
 
 ## Opciones de selección
 
-Compartidas por `filter`, `audit`, `download`, `organize`, `m3u`, `prune` y
-`run`. Deciden *sobre qué* juegos actúa el comando. Las opciones de varios
-valores aceptan comas o repetición.
+Compartidas por `filter`, `audit`, `download`, `organize`, `m3u`, `prune` y `run`.
+Deciden *sobre qué* juegos actúa un comando.
 
 | Opción | Significado |
 |---|---|
-| `--lang <códigos>` | Prioridad de idiomas, mejor primero. Por defecto `En` |
-| `-l, --filter-languages` | Además **descarta** los títulos que no hablen ninguno de `--lang` |
-| `--wishlist <ruta>` | Arreglo JSON/JSONC con los nombres a conservar |
-| `-a, --retroachievements` | Conserva los títulos con soporte de RetroAchievements |
-| `--combine or\|and` | Cómo se combinan lista de deseos y RA. Por defecto `or` |
-| `--exclude-status <lista>` | Descarta estos estados de producción |
-| `--exclude-category <lista>` | Descarta estas categorías |
+| `--lang <códigos>` | Prioridad de idiomas, mejor primero. Ordena y restringe. Por defecto `En` |
+| `--region <nombres>` | Prioridad de regiones, mejor primero. Ordena y restringe |
+| `--priority <ejes>` | Qué desempates deciden un grupo. Por defecto `lang,region,ra` |
+| `--wishlist <ruta>` | Array JSON/JSONC de nombres a seleccionar |
+| `--wishlist-mode absolute\|subset` | Qué afirma nombrar un título. Por defecto `absolute` |
+| `--achievements any\|approved` | Seleccionar solo títulos con logros |
+| `--supersets prefer\|ignore` | Cuánto vale un pack frente a su contenido. Por defecto `prefer` |
+| `--exclude <clases>` | Descarta estas clases de volcado |
 
-### `--lang` y `-l`
+### `--lang` y `--region`
 
-Por sí sola, `--lang` solo **ordena**: si un grupo tiene una edición en español y
-otra en inglés, gana la española — pero un juego solo en francés se conserva,
-porque no hay nada mejor en ese grupo.
+Ambas **ordenan y restringen**: colocan los volcados de un título y descartan el
+título que no responde a nada de la lista. Así, nombrar un solo valor te da ese
+segmento — `--lang Es` es el conjunto español, `--region Spain` el de ediciones
+españolas — y nombrar varios los ordena.
 
-`-l` la convierte además en **filtro**: los títulos que no hablen ninguno de tus
-idiomas se eliminan. Los de idioma desconocido se conservan, porque no hay con
-qué juzgarlos.
+En vez de enumerar cada valor, dos entradas cubren el resto y se ordenan donde las
+pongas:
 
-```sh
-# se prefiere español, pero se conserva todo
-minerva_archivist filter -d <dat> --lang Es,En
+| Entrada | Cubre |
+|---|---|
+| `Other` | Cualquier valor que la lista no nombre, y los ausentes salvo que esté `Unknown` |
+| `Unknown` | Títulos de los que el DAT no dice nada en ese eje |
 
-# solo español o inglés — francés, alemán, etc. se descartan
-minerva_archivist filter -d <dat> -l --lang Es,En
-```
-
-Las variantes regionales coinciden con su código base: pedir `Es` acepta `Es-MX`.
-
-### `--exclude-status`
-
-Acepta: `released`, `prototype`, `beta`, `alpha`, `demo`, `sample`, `pirate`,
-`unlicensed`, `mia`.
-
-`mia` significa que se sabe que el volcado existe pero nunca se ha preservado;
-excluirlo evita que la herramienta persiga archivos que nadie tiene.
+`Other` es una sola posición, así que los valores que la comparten recurren a un
+orden interno completo —región sobre `USA, World, Canada, Europe, UK, …`, idioma
+sobre lo que eso implica— en vez de resolverse arbitrariamente.
 
 ```sh
---exclude-status mia,prototype,beta,alpha,demo,sample,unlicensed,pirate
+# solo español
+minerva_archivist filter -d <dat> --lang Es
+
+# español, luego inglés, luego todo lo demás
+minerva_archivist filter -d <dat> --lang Es,En,Other
+
+# España y América primero, el resto sigue siendo bienvenido
+minerva_archivist filter -d <dat> --region Spain,USA,Europe,Other
 ```
 
-### `--exclude-category`
+Las entradas de `--lang` cubren sus subetiquetas: pedir `Es` acepta `Es-MX`. Sin
+`--region`, se usa el orden interno completo, que lista todas las regiones y por
+tanto no descarta nada; los títulos sin etiqueta cuentan como `Unknown`.
 
-Coincidencia por subcadena sin distinguir mayúsculas, contra las categorías del
-juego, que salen del elemento `<category>` del DAT **y** de su grupo en el
-clonelist. Esa segunda fuente importa: los DATs de No-Intro no traen categorías,
-así que los cartuchos de prueba y las utilidades solo se reconocen por el
-clonelist.
+### `--priority`
 
-Valores habituales: `Applications`, `Audio`, `BIOS`, `Bonus Discs`,
-`Coverdiscs`, `Demos`, `Educational`, `Games`, `Manuals`, `Multimedia`,
-`Pirate`, `Preproduction`, `Promotional`, `Unlicensed`, `Video`.
+Idioma, región y logros tiran en direcciones distintas: preferir tu idioma puede
+costarte el volcado que lleva los logros, y al revés. `--priority` dice quién gana,
+mejor primero.
 
-```sh
---exclude-category "Applications,Audio,BIOS,Coverdiscs,Educational,Manuals,Multimedia,Promotional,Video"
-```
+| Valor | Efecto |
+|---|---|
+| `lang,region,ra` | Por defecto. Gana tu idioma; los logros solo desempatan |
+| `ra,lang` | Gana el volcado con logros, aunque esté en otro idioma |
+| `lang,ra` | Idioma primero, luego logros; la región deja de superar a ninguno |
+
+Dejar fuera `lang` o `ra` los saca del orden por completo. **`region` no**:
+conserva un puesto fijo por debajo de lo que sí listaste, porque nada más en la
+cadena puede decidir entre dos regiones y un empate entre regiones acabaría
+resuelto por la ortografía. Omitirla significa que no debe superar a tu idioma ni
+a los logros.
+
+Conviene saberlo antes de poner `ra` primero: un volcado europeo con español
+suele no tener logros —se validan contra la edición USA—, así que `ra,lang` pasará
+por alto justo el volcado para el que se hizo tu parche de traducción.
+
+Por debajo de lo que listaste el orden es fijo: supersets, región, prioridad del
+clonelist, ediciones modernas (una copia de Virtual Console o de consola pierde
+frente al original), ediciones económicas (gana la reedición, suele traer las
+correcciones), revisión, `(Alt)`/OEM, y por último las listas de promoción y
+degradación.
 
 ### Lista de deseos
 
-Un arreglo JSON/JSONC con nombres base de juegos:
+Un array JSON/JSONC de nombres base:
 
 ```jsonc
 [
   "Chrono Trigger",
   "Final Fantasy VII",
-  "Bomber Boy"   // también arrastra su grupo de clones
+  "Bomber Boy"   // sirve cualquiera de las grafías regionales del título
 ]
 ```
 
-La coincidencia ignora mayúsculas, puntuación, un "The" inicial o final, y las
-etiquetas de región y formato. Es exacta tras normalizar, no por subcadena — usa
-títulos base completos. Nombrar cualquier título de un grupo de clones selecciona
-el grupo entero.
+El emparejamiento ignora mayúsculas, puntuación, un "The" inicial o final, y las
+etiquetas de región y formato. Tras eso es exacto, no por subcadena: usa títulos
+base completos. Nombrar cualquier edición de un juego selecciona el juego, y luego
+son los órdenes los que eligen su mejor volcado, así que tu grafía nunca decide
+con qué región acabas. Nombrar un pack multijuego pide el pack, no cada título que
+lleva dentro.
 
-Combínala con RetroAchievements desde la línea de comandos, no desde el archivo:
+#### `--wishlist-mode`
+
+Una lista de deseos puede ser dos cosas, y una sola respuesta resuelve las dos
+mitades de la pregunta.
+
+**`absolute`** (por defecto) — un conjunto propio, **por encima** de `--lang` y
+`--region`. Todo lo que nombraste se selecciona; esos órdenes solo eligen cuál de
+sus volcados te llevas. Es lo que hace que un título solo en japonés sobreviva a
+`--lang Es,En`, que es justo lo que quieres cuando lo nombras para aplicarle un
+parche de traducción. Y como está por encima de los órdenes, sería absurdo
+descartarlo luego por no tener logros: `--achievements` **se le suma** en vez de
+recortarlo.
 
 ```sh
---wishlist <ruta> -a --combine or    # en la lista O tiene logros
---wishlist <ruta> -a --combine and   # en la lista Y tiene logros
+--wishlist <ruta> --achievements any   # mi lista, más todo lo que tenga logros
 ```
 
+**`subset`** — una condición entre las demás. Un título nombrado sigue teniendo que
+hablar un idioma del orden, venir de una región del orden y cumplir
+`--achievements`, que por tanto **acota** la lista:
+
+```sh
+--wishlist <ruta> --wishlist-mode subset --achievements any   # solo los títulos de la lista que tienen logros
+```
+
+### `--achievements`
+
+Omítelo y los logros no restringen nada: `--priority ra` sigue ordenándolos. Si lo
+pasas, nombra el conjunto que quieres, a la escala que quieres:
+
+| Valor | Conserva |
+|---|---|
+| `any` | Títulos con logros en alguno de sus volcados, dejando que `--priority` elija cuál los representa |
+| `approved` | Solo los volcados contra los que se creó el set, de modo que el volcado aprobado sea el que gane su grupo |
+
+Un volcado se vincula de dos formas, que no valen igual: por **hash** demuestra que
+el set se creó contra exactamente esos bytes, por **nombre** solo dice que hay un
+título así cubierto. `approved` solo acepta la primera, y el desempate `ra` la
+prefiere. `--explain` marca cuál obtuvo cada volcado:
+
+```
+WIN Dragon Quest - The Hand of the Heavenly Bride (Europe)  [...]  ra:name
+    Dragon Quest V - Hand of the Heavenly Bride (USA)       [...]
+```
+
+Dos advertencias. RetroAchievements no cubre Xbox, Xbox 360, PS3, 3DS ni Vita, así
+que ahí `--achievements` no selecciona nada. Y en los sistemas de disco los sets se
+calculan contra el ejecutable del disco y no contra la imagen, así que todas las
+uniones son por nombre y `approved` no selecciona nada: es una herramienta de la
+era del cartucho.
+
+### Packs y `--supersets`
+
+Un clonelist lista un pack multijuego bajo **todos** los grupos que contiene, así
+que el pack responde por todos ellos. Compite por la plaza de cada juego que
+incluye y, al ganarla, la ocupa: obtienes el pack, no el pack más copias sueltas de
+lo que ya viene en él.
+
+| Modo | Efecto |
+|---|---|
+| `prefer` | Por defecto. El pack responde por su contenido y ocupa sus plazas |
+| `ignore` | Cada grupo va a una edición propia; el pack solo cubre los grupos que nada más cubre |
+
+Nombrar uno de los títulos que lleva un pack te da el pack con `prefer`, o esa
+edición con `ignore`.
+
+Lo mismo vale para una edición que engloba a otra: una edición deluxe o de torneo
+que contiene la original representa a su grupo y gana frente a una edición normal,
+frente a una revisión superior de esa, y frente a un volcado de una región que
+tengas por encima.
+
+### Las reediciones no son juegos distintos
+
+`Mario Kart 64 (USA)` y `Mario Kart 64 (USA) (LodgeNet)` son un solo juego. Las
+etiquetas de edición se quitan al construir la clave de clon, así que las dos
+compiten por una plaza en vez de conservarse y descargarse ambas: eso cubre
+`(LodgeNet)`, `(Wii Virtual Console)`, `(Switch Online)`, `(Greatest Hits)` y
+algunos cientos más.
+
+### `--exclude`
+
+Se aplica siempre, también sobre la lista de deseos: nombrar un juego no debe
+readmitir en silencio su prototipo ni su manual.
+
+Acepta `add-ons`, `applications`, `audio`, `bad-dumps`, `bios`, `bonus-discs`,
+`coverdiscs`, `demos`, `educational`, `manuals`, `mia`, `multimedia`, `pirate`,
+`preproduction`, `promotional`, `unlicensed`, `video`.
+
+```sh
+--exclude mia,preproduction,demos,unlicensed,pirate,bonus-discs,applications,bios,coverdiscs,educational,manuals,multimedia,promotional,video
+```
+
+Cada clase se reconoce por tres vías a la vez —la `<category>` del DAT, la del
+clonelist y el nombre—, así que un disco de prueba cuenta como demo se escriba
+como se escriba, en japonés o coreano incluidos. Importa porque los DAT de
+No-Intro no traen categorías, y el nombre es la única señal. `mia` significa que se
+sabe que el volcado existe pero nunca se ha preservado; excluirlo evita que la
+herramienta persiga archivos que nadie tiene.
 ---
 
 ## Comandos
@@ -152,15 +259,37 @@ escribe nada.
 
 ```sh
 minerva_archivist filter -d <dat>
-minerva_archivist filter -d <dat> -a -l --lang En,Ja
-minerva_archivist filter -d <dat> --wishlist <ruta> -a --combine and
+minerva_archivist filter -d <dat> --achievements any --lang En,Ja
+minerva_archivist filter -d <dat> --wishlist <ruta> --wishlist-mode subset --achievements any
 ```
 
 La salida es un embudo — el total, los supervivientes, y qué quitó cada etapa:
 
 ```
-<sistema> [noIntro]: 404 -> 309  (status -89, language -6)
+<sistema> [noIntro]: 404 -> 309  (exclude -89, language -6)
 ```
+
+| Opción | Significado |
+|---|---|
+| `--list` | Imprime el nombre de cada juego seleccionado |
+| `--explain <texto>` | Para cada juego cuyo nombre contenga `<texto>`, imprime su grupo de clones y si ganó |
+
+`--explain` responde a «¿por qué tengo dos de esto, o ninguno?»: muestra qué
+compitió por la plaza.
+
+```sh
+minerva_archivist filter -d <dat> --explain "Bomberman 64"
+```
+
+```
+  --- Bomberman 64
+          Bomberman 64 (Europe)  [bomberman 64]
+      WIN Bomberman 64 (USA)  [bomberman 64]
+      WIN Bomberman 64 (Japan)  [bomberman 64 japan]
+```
+
+Dos ganadores porque el clonelist separa el lanzamiento japonés en su propio
+grupo — es otro juego, no una variante regional.
 
 ### `audit`
 
@@ -173,11 +302,23 @@ minerva_archivist audit -d <dat> -r <raiz-roms> --no-hash --no-chd
 
 | Opción | Significado |
 |---|---|
-| `--[no-]hash` | Verifica por hash. `--no-hash` hace una pasada rápida por nombre y tamaño. Activo por defecto |
+| `--[no-]hash` | Verifica por hash. Activo por defecto. `--no-hash` no lee ningún archivo, así que todo sale como ausente: solo sirve para ver el embudo de selección |
 | `--[no-]chd` | Acepta un `.chd` local para una entrada Redump cruda. Activo por defecto |
 
 Los archivos dentro de `.trash` se ignoran — una copia en cuarentena no cuenta
 como que la tienes.
+
+La auditoría identifica los archivos contra el DAT **completo**, no solo contra la
+selección, así que un volcado que perdió su plaza 1G1R se sigue reconociendo. Eso
+es lo que hace legible una [carpeta curada](#carpetas-curadas) que guarda a un
+finalista, en vez de parecer un montón de basura. Informa de qué carpetas
+encontró, y por tanto de qué juegos no va a descargar:
+
+```
+  18 curated of 18 folder(s), 9 game(s) settled there
+  curated: 007 - The World Is Not Enough (Europe)  (1 rom(s), 2 of your own)
+  settled elsewhere, will not be fetched: 007 - The World Is Not Enough (USA)
+```
 
 ### `download`
 
@@ -238,10 +379,66 @@ minerva_archivist organize -d <dat> -r <raiz-roms> --folder-as-file --extract \
 | `--protect <nombre>` | Carpetas que nunca se tocan. Repetible |
 | `--apply` | Mueve de verdad. Por defecto es simulacro |
 
-Protegido significa: cualquier carpeta nombrada en `--protect`, más cualquier
-carpeta que ya contenga archivos tuyos (`.ips`, `.bps`, `.sav`, `.state`, …). Un
-juego cuyo destino no se pueda escribir se reporta y se omite — no aborta la
+Un juego cuyo destino no se pueda escribir se reporta y se omite — no aborta la
 ejecución.
+
+#### Carpetas curadas
+
+Una carpeta está **curada** cuando guarda un volcado *y* archivos tuyos: parches,
+traducciones, manuales, escaneos de carátula, una subcarpeta `translations/`. Las
+partidas guardadas, los estados y los `.m3u` no cuentan — esos los escribió la
+propia herramienta.
+
+```
+Body Harvest (USA)/
+├── Body Harvest (USA).z64          <- el volcado
+└── translations/
+    ├── ... (v0.98) (T-Es).z64      <- tuyo
+    └── ... (v0.98) (T-Es).txt      <- tuyo
+```
+
+Las carpetas curadas se detectan por contenido, en cada ejecución, además de lo
+que nombres en `--protect`. De una carpeta curada no se saca nada, y nada de lo
+que hay dentro se manda a `.trash` — esos parches solo tienen sentido junto al
+volcado para el que se hicieron.
+
+Dos cosas sí ocurren, porque ninguna puede estropear lo que montaste:
+
+* una carpeta con exactamente un juego completo se renombra al nombre del juego;
+* una ROM de dentro se renombra a su nombre del DAT, sin salir de la carpeta.
+
+Una carpeta **sin** contenido extra no está curada: si guarda un volcado que la
+selección no quiere, se manda a `.trash` como cualquier archivo suelto, y la
+carpeta se elimina al quedar vacía.
+
+#### Copias duplicadas del mismo volcado
+
+La curación protege una carpeta, no los bytes que hay dentro. Si pones una
+segunda copia de un volcado curado suelta en la raíz, es redundante — 1G1R
+quiere una de cada — así que se poda y la copia curada se queda con el sitio,
+con sus parches y todo:
+
+```
+Sagaia (Japan) (En)/
+├── Sagaia (Japan) (En).gb          <- se conserva
+└── translations/sagaia (T-Es).ips
+Sagaia (Japan) (En).gb              <- se poda, mismos bytes
+```
+
+Cuál se queda con el sitio lo decide el contenido, no el orden de lectura del
+disco: gana la carpeta curada; si no la hay, el archivo que ya se llama como lo
+nombra el DAT; y luego el más cercano a la raíz. Volcados **distintos** de un
+mismo juego en carpetas separadas — tres Ocarinas regionales, cada una con su
+traducción — no son duplicados y no se toca nada.
+
+El único caso que se deja en paz son los mismos bytes bajo **dos** carpetas
+curadas. Qué juego de parches conservar es un criterio sobre tu contenido, así
+que la ejecución solo lo informa:
+
+```
+[prune] 1 duplicate(s) left alone inside curated folders — merge them by hand
+        = Ocarina FR/Legend of Zelda (USA).z64
+```
 
 ### `m3u`
 
@@ -256,7 +453,8 @@ minerva_archivist m3u -d <dat> -r <raiz-roms> --apply
 
 Mueve a `.trash` todo lo que haya en `<raiz-roms>` y no forme parte de la
 selección, conservando la estructura relativa. Mueve, nunca borra, y jamás toca
-`.trash` ni las carpetas protegidas.
+`.trash`, las carpetas protegidas ni las [carpetas curadas](#carpetas-curadas).
+Una carpeta que se quede vacía tras la limpieza se elimina.
 
 ```sh
 minerva_archivist prune -d <dat> -r <raiz-roms>
@@ -276,8 +474,8 @@ minerva_archivist run -d <dat> -r <raiz-roms>
 
 # todo
 minerva_archivist run -d <dat> -r <raiz-roms> \
-  -l --lang Es,En,Ja --wishlist <ruta> -a --combine or \
-  --exclude-status mia,prototype,beta,demo \
+  --lang Es,En,Ja --wishlist <ruta> --achievements any \
+  --exclude mia,preproduction,demos \
   --with-download --aria2 <ruta> \
   --extract --protect Hacks --apply
 
@@ -305,7 +503,7 @@ actúan sobre los archivos recién llegados.
 ## Leer la salida
 
 ```
-[select] 404 in DAT -> 309 wanted  (status -89, language -6)
+[select] 404 in DAT -> 309 wanted  (exclude -89, language -6)
 [audit] 0/309 on disk, 309 missing, 0 unknown
 [download] 309 missing -> 303 in torrent, 6 not distributed, 102.5 MB
 [audit] 303/309 on disk, 6 missing
@@ -314,8 +512,8 @@ actúan sobre los archivos recién llegados.
 ```
 
 - **select** — total del DAT, supervivientes, y una entrada por cada motivo que
-  quitó algo. Los motivos son `status`, `category`, `language`, `1g1r` y
-  `wishlist/ra`; siempre suman la diferencia.
+  quitó algo. Los motivos son `exclude`, `language`, `region`, `1g1r`, `superset`
+  y `wishlist/ra`; siempre suman la diferencia.
 - **audit** — `en disco / deseados`. `unknown` cuenta los archivos presentes que
   ningún juego seleccionado reclama; son los que `prune` movería.
 - **download** — cuántos faltan, cuántos lleva realmente el archivo, y el
@@ -323,8 +521,7 @@ actúan sobre los archivos recién llegados.
 
 ## Notas
 
-- El motor 1G1R replica el de Retool, pero su filtro de regiones no está
-  implementado. Si tu configuración de Retool restringe regiones, usa `-l` para
-  obtener resultados equivalentes; un título de una región excluida y sin
-  metadatos de idioma podría colarse.
+- Los clonelists, metadatos, logros y datos MIA se replican del proyecto original
+  al que apunta `sync`. El motor 1G1R reimplementa su agrupación y puntuación, con
+  el orden de los desempates a tu elección mediante `--priority`.
 - La selección funciona sin conexión. Solo `sync` y `download` usan la red.

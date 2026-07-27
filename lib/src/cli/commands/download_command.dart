@@ -70,8 +70,29 @@ class DownloadCommand extends ArchivistCommand with SelectionCommand {
       final report = await const RomAuditor().audit(
         dat: DatFile(header: t.dat.header, games: t.games),
         romRoot: root,
+        catalog: t.dat,
       );
-      wanted.addAll(report.missing.map((a) => a.game));
+      // Another dump of the same game already sitting in a curated folder means
+      // this one has nothing to add: it would land beside a patch built against
+      // its sibling.
+      final settled = t.settledByCuratedGroup(report);
+      final held = [
+        for (final a in report.missing)
+          if (settled.contains(a.game.name)) a.game.name,
+      ];
+      if (held.isNotEmpty) {
+        stdout.writeln(
+          '${held.length} skipped: the same game is already settled in a '
+          'curated folder',
+        );
+        for (final name in held) {
+          stdout.writeln('  - $name');
+        }
+      }
+      wanted.addAll([
+        for (final a in report.missing)
+          if (!settled.contains(a.game.name)) a.game,
+      ]);
     }
     final firstDat = targets.isEmpty ? null : targets.first.dat;
 

@@ -61,18 +61,27 @@ class OrganizeCommand extends ArchivistCommand with SelectionCommand {
       final report = await auditor.audit(
         dat: t.target,
         romRoot: root,
+        catalog: t.dat,
       );
       final actions = await organizer.organize(
         present: report.present,
         romRoot: root,
+        // Folders the user has curated are added to whatever --protect named.
+        config: config.protecting(report.library.curatedFolders),
+        dryRun: !apply,
+      );
+      final renames = await const CuratedFolderRenamer().rename(
+        report: report,
+        romRoot: root,
         config: config,
         dryRun: !apply,
       );
+      final all = [...actions, ...renames];
       stdout.writeln(
-        '${t.dat.header.name}: ${actions.summary}'
+        '${t.dat.header.name}: ${all.summary}'
         '${apply ? "" : " (dry run)"}',
       );
-      for (final f in actions.where((a) => a.op == OrganizeOp.failed)) {
+      for (final f in all.where((a) => a.op == OrganizeOp.failed)) {
         stderr.writeln('  ! ${f.game}: ${f.error}');
       }
     }

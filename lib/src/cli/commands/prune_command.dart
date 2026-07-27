@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../../domain/auditor.dart';
 import '../../domain/organize.dart';
 import '../runner.dart';
@@ -42,11 +44,12 @@ class PruneCommand extends ArchivistCommand with SelectionCommand {
       final report = await auditor.audit(
         dat: t.target,
         romRoot: root,
+        catalog: t.dat,
       );
       final moved = await pruner.prune(
         report: report,
         romRoot: root,
-        protectedFolders: protect,
+        protectedFolders: {...protect, ...report.library.curatedFolders},
         dryRun: !apply,
       );
       total += moved.length;
@@ -54,6 +57,19 @@ class PruneCommand extends ArchivistCommand with SelectionCommand {
         '${t.dat.header.name}: ${moved.length} orphan(s)'
         '${apply ? " moved" : " (dry run)"}',
       );
+      for (final f in moved) {
+        stdout.writeln('  - ${p.relative(f.path, from: p.join(root.path, trashFolderName))}');
+      }
+      final twinned = report.duplicatesInCuratedFolders(root);
+      if (twinned.isNotEmpty) {
+        stdout.writeln(
+          '  ${twinned.length} duplicate(s) left alone inside curated folders '
+          '— merge them by hand to drop the extra copy:',
+        );
+        for (final f in twinned) {
+          stdout.writeln('  = ${p.relative(f.path, from: root.path)}');
+        }
+      }
     }
     stdout.writeln('Total: $total orphan(s).');
     return 0;

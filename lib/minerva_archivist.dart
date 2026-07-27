@@ -1,7 +1,7 @@
 /// MiNERVA Archivist — public API.
 ///
 /// A dependency-free Dart core for auditing, filtering (1G1R), and selectively
-/// downloading ROM sets, with an internal Retool-analogous clone-grouping and
+/// downloading ROM sets, with its own clone-grouping and
 /// RetroAchievements-tagging engine.
 library;
 
@@ -21,6 +21,7 @@ export 'src/data/torrent.dart';
 export 'src/domain/auditor.dart';
 export 'src/domain/download.dart';
 export 'src/domain/enrichment.dart';
+export 'src/domain/library.dart';
 export 'src/domain/organize.dart';
 export 'src/domain/selection.dart';
 
