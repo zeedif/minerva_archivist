@@ -80,7 +80,11 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
     if (active('sync')) {
       stdout.writeln('[sync] fetching metadata ...');
       final s = await repo.sync();
-      stdout.writeln('[sync] ${s.downloaded} file(s), ${s.errors.length} error(s)');
+      stdout.writeln(
+        '[sync] ${s.downloaded} file(s)'
+        '${s.removed > 0 ? ", ${s.removed} stale removed" : ""}'
+        ', ${s.errors.length} error(s)',
+      );
     }
 
     final selection = await selectionContext(repo);

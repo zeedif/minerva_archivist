@@ -53,6 +53,49 @@ void main() {
     });
   });
 
+  group('RetroAchievements asset names', () {
+    test('strips the Non-Redump prefix, as Retool does', () {
+      const name = 'Non-Redump - Sony - PlayStation (Parent-Clone)';
+      expect(r.raSystem(name), 'Sony - PlayStation');
+      expect(
+        r.assetFile(name, DatFlavor.noIntro, MetadataAsset.retroAchievements),
+        'Sony - PlayStation.json',
+      );
+    });
+
+    test('offers the manufacturer-free name RA files itself under', () {
+      // Upstream renamed `Coleco - Colecovision.json` to `ColecoVision.json`.
+      const name = 'Coleco - ColecoVision (Parent-Clone) (20260710-180934)';
+      expect(r.raSystemCandidates(name).first, 'Coleco - ColecoVision');
+      expect(r.raSystemCandidates(name), contains('ColecoVision'));
+    });
+
+    test('candidates are derived from the DAT name only', () {
+      expect(r.raSystemCandidates('Microsoft - MSX2 (Parent-Clone)'), [
+        'Microsoft - MSX2',
+        'MSX2',
+      ]);
+      expect(r.raSystemCandidates('Arcade'), ['Arcade']);
+      // Nothing guesses at `Nintendo Famicom Disk System`; a file name that
+      // can't be derived is matched by ROM hash instead.
+      expect(
+        r.raSystemCandidates('Nintendo - Family Computer Disk System'),
+        isNot(contains('Nintendo Famicom Disk System')),
+      );
+    });
+
+    test('normalizeKey collapses separators and case', () {
+      expect(
+        SystemNameResolver.normalizeKey('Sony - PlayStation.json'),
+        SystemNameResolver.normalizeKey('Sony PlayStation.json'),
+      );
+      expect(
+        SystemNameResolver.normalizeKey('Coleco - ColecoVision'),
+        isNot(SystemNameResolver.normalizeKey('ColecoVision')),
+      );
+    });
+  });
+
   group('metadataSystem drops datFileTags that MiNERVA folder names keep', () {
     // A representative slice of `internal-config.json`'s datFileTags.
     final tagged = r.withDatFileTags(const [

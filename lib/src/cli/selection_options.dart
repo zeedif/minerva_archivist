@@ -134,7 +134,7 @@ final class SelectionContext {
       filterLanguages: filterLanguages,
       cloneList: await repo.cloneList(name, flavor),
       metadata: await repo.metadata(name, flavor),
-      ra: await repo.retroAchievements(name),
+      ra: await repo.retroAchievements(name, dat: dat),
       mias: await repo.mias(name, flavor),
     );
   }

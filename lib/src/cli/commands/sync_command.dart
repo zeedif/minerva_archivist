@@ -46,7 +46,7 @@ class SyncCommand extends ArchivistCommand {
 
     stdout.writeln(
       'Done: ${report.downloaded} downloaded, ${report.upToDate} up-to-date, '
-      '${report.errors.length} error(s).',
+      '${report.removed} stale removed, ${report.errors.length} error(s).',
     );
     for (final e in report.errors) {
       stderr.writeln('  ! $e');
