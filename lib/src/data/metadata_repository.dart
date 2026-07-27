@@ -49,7 +49,14 @@ abstract interface class MetadataRepository {
   Future<SystemMetadata?> metadata(String system, DatFlavor flavor);
 
   /// Base system name (no flavor suffix); null when RA doesn't cover it.
-  Future<RetroAchievementsIndex?> retroAchievements(String system);
+  ///
+  /// Pass [dat] to let the lookup fall back to matching the mirrored files
+  /// against its ROM hashes, for the systems whose file name can't be derived
+  /// from the system name.
+  Future<RetroAchievementsIndex?> retroAchievements(
+    String system, {
+    DatFile? dat,
+  });
 
   Future<MiaList?> mias(String system, DatFlavor flavor);
 }
@@ -114,10 +121,40 @@ final class SystemNameResolver {
     _ => 'No-Intro',
   };
 
+  /// The RetroAchievements base name Retool looks for: [metadataSystem] without
+  /// the `Non-Redump - ` prefix (`import_clone_list()` in `input.py` strips it
+  /// along with the flavor suffix, which we never add for this asset).
+  String raSystem(String datName) =>
+      metadataSystem(datName).replaceFirst(RegExp('^Non-Redump - '), '');
+
+  /// RetroAchievements base names to try for [datName], best first.
+  ///
+  /// Retool opens `<raSystem>.json` and nothing else, which works for it only
+  /// because Windows paths are case-insensitive. Part of that folder is named
+  /// after RetroAchievements' own consoles rather than the DAT's system
+  /// (`ColecoVision.json`, `Sony PlayStation.json`), so the second candidate
+  /// drops the manufacturer prefix.
+  ///
+  /// Both candidates are derived from the DAT name, never looked up in a table
+  /// of console names that upstream can rename. Systems whose file name can't
+  /// be derived at all are matched by ROM hash instead.
+  List<String> raSystemCandidates(String datName) {
+    final base = raSystem(datName);
+    // `Coleco - ColecoVision` -> `ColecoVision`.
+    final cut = base.indexOf(' - ');
+    return cut > 0 ? [base, base.substring(cut + 3)] : [base];
+  }
+
+  /// Case- and separator-insensitive comparison key, so `Sony - PlayStation`
+  /// and `Sony PlayStation` collapse onto one another.
+  static String normalizeKey(String name) =>
+      name.toLowerCase().replaceAll(RegExp('[^a-z0-9]+'), '');
+
   String assetFile(String datName, DatFlavor flavor, MetadataAsset asset) {
-    final base = metadataSystem(datName);
-    if (asset == MetadataAsset.retroAchievements) return '$base.json';
-    return '$base (${suffix(flavor)}).json';
+    if (asset == MetadataAsset.retroAchievements) {
+      return '${raSystem(datName)}.json';
+    }
+    return '${metadataSystem(datName)} (${suffix(flavor)}).json';
   }
 }
 
@@ -154,6 +191,7 @@ final class RemoteMetadataRepository implements MetadataRepository {
     final assets = only ?? MetadataAsset.values.toSet();
     var downloaded = 0;
     var upToDate = 0;
+    var removed = 0;
     final errors = <String>[];
 
     if (assets.contains(MetadataAsset.config)) {
@@ -194,9 +232,12 @@ final class RemoteMetadataRepository implements MetadataRepository {
       if (result.errors > 0) {
         errors.add('$folder: ${result.errors} file error(s)');
       }
+      final pruned = await _pruneFolder(folder, manifest);
+      removed += pruned;
       onProgress?.call(
         '$folder: ${result.downloaded} downloaded, '
         '${result.upToDate} up-to-date'
+        '${pruned > 0 ? ", $pruned stale removed" : ""}'
         '${result.errors > 0 ? ", ${result.errors} error(s)" : ""}',
       );
     }
@@ -204,9 +245,36 @@ final class RemoteMetadataRepository implements MetadataRepository {
     return (
       downloaded: downloaded,
       upToDate: upToDate,
-      removed: 0,
+      removed: removed,
       errors: errors,
     );
+  }
+
+  /// Deletes cached assets the manifest no longer lists.
+  ///
+  /// Upstream renames files (`Coleco - Colecovision.json` ->
+  /// `ColecoVision.json`); left in place, the old copy keeps answering lookups
+  /// on a case-insensitive filesystem and pins the cache to dead data.
+  Future<int> _pruneFolder(String folder, Map<String, String> manifest) async {
+    final dir = Directory(p.join(cacheDir, folder));
+    if (!await dir.exists()) return 0;
+    // Compared case-insensitively: writing `Foo.json` over an existing
+    // `foo.json` keeps the old casing on Windows, and that file is current.
+    final keep = {for (final k in manifest.keys) k.toLowerCase()};
+    var removed = 0;
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path).toLowerCase();
+      if (!name.endsWith('.json') || name == 'hash.json') continue;
+      if (keep.contains(name)) continue;
+      try {
+        await entity.delete();
+        removed++;
+      } catch (_) {
+        // A locked or already-deleted file isn't worth failing the sync over.
+      }
+    }
+    return removed;
   }
 
   /// Downloads every listed file that is missing or whose SHA-256 differs from
@@ -270,7 +338,7 @@ final class RemoteMetadataRepository implements MetadataRepository {
   Future<CloneList?> cloneList(String system, DatFlavor flavor) async {
     final r = await _assetResolver();
     final file = r.assetFile(system, flavor, MetadataAsset.cloneLists);
-    final json = await _loadAssetJson(MetadataAsset.cloneLists, file);
+    final json = await _loadAssetJson(MetadataAsset.cloneLists, [file]);
     return json == null ? null : _parseCloneList(file, json);
   }
 
@@ -278,31 +346,170 @@ final class RemoteMetadataRepository implements MetadataRepository {
   Future<SystemMetadata?> metadata(String system, DatFlavor flavor) async {
     final r = await _assetResolver();
     final file = r.assetFile(system, flavor, MetadataAsset.metadata);
-    final json = await _loadAssetJson(MetadataAsset.metadata, file);
+    final json = await _loadAssetJson(MetadataAsset.metadata, [file]);
     return json == null ? null : _parseMetadata(json);
   }
 
   @override
-  Future<RetroAchievementsIndex?> retroAchievements(String system) async {
+  Future<RetroAchievementsIndex?> retroAchievements(
+    String system, {
+    DatFile? dat,
+  }) async {
     final r = await _assetResolver();
-    final file = r.assetFile(
-      system,
-      DatFlavor.unknown,
-      MetadataAsset.retroAchievements,
+    final base = r.raSystem(system);
+    final candidates = [
+      for (final candidate in r.raSystemCandidates(system)) '$candidate.json',
+    ];
+
+    // Resolve the name up front, so a content search knows which file it has
+    // already been through.
+    final folder = _folders[MetadataAsset.retroAchievements]!;
+    final named = _resolveAssetName(
+      await _manifest(folder),
+      candidates,
+      separatorInsensitive: true,
     );
-    final json = await _loadAssetJson(MetadataAsset.retroAchievements, file);
-    return json == null ? null : _parseRa(r.metadataSystem(system), json);
+    final json = await _loadAssetJson(
+      MetadataAsset.retroAchievements,
+      named == null ? candidates : [named],
+    );
+
+    final byName = json == null ? null : _parseRa(base, json);
+    if (dat == null || (byName != null && _covers(byName, dat))) return byName;
+    return await _discoverRetroAchievements(base, dat, read: named) ?? byName;
   }
+
+  /// Whether an index describes [dat] at all: any ROM hash in it, or — for the
+  /// disc systems whose RA hashes are computed over the primary executable —
+  /// any region-free title match.
+  bool _covers(RetroAchievementsIndex index, DatFile dat) =>
+      dat.games.any((g) => index.supportsGame(g) || index.supportsName(g.name));
 
   @override
   Future<MiaList?> mias(String system, DatFlavor flavor) async {
     final r = await _assetResolver();
     final file = r.assetFile(system, flavor, MetadataAsset.mias);
-    final json = await _loadAssetJson(MetadataAsset.mias, file);
+    final json = await _loadAssetJson(MetadataAsset.mias, [file]);
     return json == null ? null : _parseMia(r.metadataSystem(system), json);
   }
 
   void close() => _client.close();
+
+  // --- RetroAchievements discovery by content ---
+
+  /// Picks the mirrored RetroAchievements file whose hashes best describe [dat],
+  /// for the systems RA files under a name no rule can derive from the DAT's.
+  ///
+  /// Reading every file to answer that would be wasteful, so the search runs in
+  /// two passes over disjoint sets: first the files whose name is related to
+  /// [system] — same manufacturer, or one name contained in the other — and only
+  /// if none of those matches a single ROM, the rest of the folder. The file with
+  /// the most matching hashes wins; a tie on zero means RA doesn't cover the
+  /// system. [read] names the file the caller already resolved and rejected, and
+  /// is left out of both passes.
+  ///
+  /// Only files already mirrored and current per `hash.json` are read: this
+  /// searches the local cache and never downloads the whole folder.
+  Future<RetroAchievementsIndex?> _discoverRetroAchievements(
+    String system,
+    DatFile dat, {
+    String? read,
+  }) async {
+    final folder = _folders[MetadataAsset.retroAchievements]!;
+    final manifest = await _manifest(folder);
+    final related = <String>[];
+    final rest = <String>[];
+    for (final name in manifest.keys) {
+      if (name == 'hash.json' || !name.endsWith('.json') || name == read) {
+        continue;
+      }
+      (_isRelatedName(system, name) ? related : rest).add(name);
+    }
+    if (related.isEmpty && rest.isEmpty) return null;
+
+    final hashes = _romHashes(dat);
+    if (hashes.isEmpty) return null;
+    return await _bestByHashes(folder, related, hashes, system) ??
+        await _bestByHashes(folder, rest, hashes, system);
+  }
+
+  /// Whether an asset filename plausibly belongs to [system]: same manufacturer
+  /// (the segment before the first ` - `), or either normalized name contains
+  /// the other, which covers a console spelled longer or shorter than the DAT's.
+  bool _isRelatedName(String system, String filename) {
+    final asset = p.basenameWithoutExtension(filename);
+    final a = SystemNameResolver.normalizeKey(system);
+    final b = SystemNameResolver.normalizeKey(asset);
+    if (a.isEmpty || b.isEmpty) return false;
+    if (a.contains(b) || b.contains(a)) return true;
+    final maker = SystemNameResolver.normalizeKey(_manufacturer(system));
+    return maker.isNotEmpty &&
+        SystemNameResolver.normalizeKey(_manufacturer(asset)) == maker;
+  }
+
+  /// `Coleco - ColecoVision` -> `Coleco`; a name without a ` - ` has no
+  /// manufacturer segment to compare, so its first word stands in for one.
+  String _manufacturer(String name) {
+    final cut = name.indexOf(' - ');
+    if (cut > 0) return name.substring(0, cut);
+    final space = name.indexOf(' ');
+    return space > 0 ? name.substring(0, space) : name;
+  }
+
+  /// Every hash a ROM in [dat] can be joined on, lowercased.
+  Set<String> _romHashes(DatFile dat) => {
+    for (final game in dat.games)
+      for (final rom in game.roms)
+        for (final hash in [rom.crc32, rom.md5, rom.sha1, rom.sha256])
+          if (hash != null && hash.isNotEmpty) hash.toLowerCase(),
+  };
+
+  /// The candidate with the most entries hashing into [hashes], or null when
+  /// none matches even one.
+  Future<RetroAchievementsIndex?> _bestByHashes(
+    String folder,
+    List<String> candidates,
+    Set<String> hashes,
+    String system,
+  ) async {
+    var bestHits = 0;
+    Map<String, dynamic>? best;
+    for (final name in candidates) {
+      final json = await _cachedAssetJson(folder, name);
+      if (json == null) continue;
+      var hits = 0;
+      for (final entry in (json['retroachievements'] as List? ?? const [])) {
+        if (entry is! Map) continue;
+        for (final key in const ['crc', 'crc32', 'md5', 'sha1', 'sha256']) {
+          final hash = entry[key]?.toString().toLowerCase();
+          if (hash != null && hashes.contains(hash)) {
+            hits++;
+            break;
+          }
+        }
+      }
+      if (hits > bestHits) {
+        bestHits = hits;
+        best = json;
+      }
+    }
+    return best == null ? null : _parseRa(system, best);
+  }
+
+  /// The cached copy of one asset, or null unless it is present and current.
+  Future<Map<String, dynamic>?> _cachedAssetJson(
+    String folder,
+    String filename,
+  ) async {
+    final expected = (await _manifest(folder))[filename];
+    if (expected == null) return null;
+    final local = File(p.join(cacheDir, folder, filename));
+    if (!await local.exists()) return null;
+    final bytes = await local.readAsBytes();
+    if (crypto.sha256.convert(bytes).toString() != expected) return null;
+    final json = jsonDecode(utf8.decode(bytes));
+    return json is Map<String, dynamic> ? json : null;
+  }
 
   // --- fetching + caching ---
 
@@ -343,13 +550,34 @@ final class RemoteMetadataRepository implements MetadataRepository {
     return manifest;
   }
 
+  /// Loads one asset, resolving [candidates] (best first) against the folder's
+  /// `hash.json`.
+  ///
+  /// The manifest doubles as a directory listing, which is the only way to
+  /// notice that upstream renamed a file: asking for a name it doesn't list can
+  /// only 404, and a same-named local leftover would be stale anyway.
   Future<Map<String, dynamic>?> _loadAssetJson(
     MetadataAsset asset,
-    String filename,
-  ) async {
+    List<String> candidates, {
+    bool separatorInsensitive = false,
+  }) async {
     final folder = _folders[asset]!;
+    final manifest = await _manifest(folder);
+    // With no manifest (never synced, or offline) fall through on the primary
+    // name so a direct fetch can still answer.
+    final filename =
+        _resolveAssetName(
+          manifest,
+          candidates,
+          separatorInsensitive: separatorInsensitive,
+        ) ??
+        (manifest.isEmpty ? candidates.first : null);
+    // Nothing in the folder answers to this system, so the asset doesn't exist
+    // upstream (e.g. RetroAchievements only covers ~50 systems).
+    if (filename == null) return null;
+
     final local = File(p.join(cacheDir, folder, filename));
-    final expected = (await _manifest(folder))[filename];
+    final expected = manifest[filename];
 
     if (expected != null && await local.exists()) {
       final bytes = await local.readAsBytes();
@@ -358,14 +586,40 @@ final class RemoteMetadataRepository implements MetadataRepository {
       }
     }
 
-    // Not cached or stale. A 404 means the asset doesn't exist for this system
-    // (e.g. RetroAchievements only covers ~61 systems).
+    // Not cached or stale.
     try {
       final bytes = await _download('$folder/$filename');
       return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     } on HttpException {
       return null;
     }
+  }
+
+  /// The manifest key answering the first of [candidates] that matches.
+  ///
+  /// Retool reads these files by name and inherits Windows' case-insensitive
+  /// path matching, so an exact-case miss must not lose the file for us either.
+  /// [separatorInsensitive] additionally collapses punctuation — needed for
+  /// `retroachievements`, where `Sony - PlayStation` is filed as
+  /// `Sony PlayStation.json`.
+  String? _resolveAssetName(
+    Map<String, String> manifest,
+    List<String> candidates, {
+    bool separatorInsensitive = false,
+  }) {
+    for (final wanted in candidates) {
+      if (manifest.containsKey(wanted)) return wanted;
+      final lower = wanted.toLowerCase();
+      for (final key in manifest.keys) {
+        if (key.toLowerCase() == lower) return key;
+      }
+      if (!separatorInsensitive) continue;
+      final norm = SystemNameResolver.normalizeKey(wanted);
+      for (final key in manifest.keys) {
+        if (SystemNameResolver.normalizeKey(key) == norm) return key;
+      }
+    }
+    return null;
   }
 
   // --- parsing ---
