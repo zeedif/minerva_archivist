@@ -342,17 +342,24 @@ void main() {
       _game('Trio Pack (USA)', langs: const ['En'], regions: const ['USA']),
     ];
 
-    SelectionResult select({SupersetMode supersets = SupersetMode.prefer}) =>
-        const GameSelector().select(
-          dat: _dat(games),
-          config: config,
-          scoring: ScoringConfig(
-            languagePriority: ['En'],
-            regionPriority: ['USA'],
-            supersets: supersets,
-          ),
-          cloneList: cl,
-        );
+    SelectionResult select({
+      CompilationMode compilations = CompilationMode.fill,
+      List<String> wishlist = const [],
+      List<ScoreAxis> priority = ScoringConfig.defaultPriority,
+      RetroAchievementsIndex? ra,
+    }) => const GameSelector().select(
+      dat: _dat(games),
+      config: config,
+      scoring: ScoringConfig(
+        languagePriority: ['En'],
+        regionPriority: ['USA'],
+        priority: priority,
+        compilations: compilations,
+      ),
+      wishlist: wishlist,
+      cloneList: cl,
+      ra: ra,
+    );
 
     test('it reports under the first group and competes in all of them', () {
       final pack = const CloneGrouper()
@@ -361,84 +368,74 @@ void main() {
       expect(pack.groupKey, 'alpha');
       expect(pack.represents, {'beta', 'gamma'});
       expect(pack.groups, ['alpha', 'beta', 'gamma']);
+      // A bundle is no improvement on any one game, so it claims no rank.
+      expect(pack.isSuperset, isFalse);
     });
 
-    test('so the titles it holds are not selected beside it', () {
-      final result = select();
+    test('but by default each game it holds wins its own group', () {
+      expect(select().games.map((g) => g.name), [
+        'Alpha (USA)',
+        'Beta (USA)',
+        // Nothing else can answer for Gamma, so the pack fills it.
+        'Trio Pack (USA)',
+      ]);
+    });
+
+    test('prefer hands it their slots instead', () {
+      final result = select(compilations: CompilationMode.prefer);
       expect(result.games.map((g) => g.name), ['Trio Pack (USA)']);
       // Two of the three slots it took were already answered for.
       expect(result.stats.represented, 2);
     });
 
-    test('ignoring it hands each group back to its own release', () {
-      final result = select(supersets: SupersetMode.ignore);
-      expect(result.games.map((g) => g.name), [
-        'Alpha (USA)',
-        'Beta (USA)',
-        // Nothing else claims Gamma, so the pack still fills it.
+    test('never keeps it out of their groups entirely', () {
+      // Gamma has nothing of its own, so with the pack barred it goes unanswered.
+      expect(
+        select(compilations: CompilationMode.never).games.map((g) => g.name),
+        ['Alpha (USA)', 'Beta (USA)'],
+      );
+    });
+
+    test('and a member with achievements outranks it under prefer', () {
+      // A pack that cannot earn what its contents can is not worth the slot.
+      final ra = _raIndex(const ['Alpha (USA)']);
+      expect(
+        select(
+          compilations: CompilationMode.prefer,
+          priority: const [ScoreAxis.lang, ScoreAxis.ra],
+          ra: ra,
+        ).games.map((g) => g.name),
+        contains('Alpha (USA)'),
+      );
+      expect(
+        select(
+          compilations: CompilationMode.first,
+          priority: const [ScoreAxis.lang, ScoreAxis.ra],
+          ra: ra,
+        ).games.map((g) => g.name),
+        ['Trio Pack (USA)'],
+      );
+    });
+
+    test('naming it asks for the pack, not for each title inside', () {
+      expect(select(wishlist: const ['Trio Pack']).games.map((g) => g.name), [
         'Trio Pack (USA)',
       ]);
     });
 
-    test('naming it asks for the pack, not for each title inside', () {
-      expect(
-        const GameSelector()
-            .select(
-              dat: _dat(games),
-              config: config,
-              scoring: ScoringConfig(languagePriority: ['En']),
-              wishlist: const ['Trio Pack'],
-              cloneList: cl,
-            )
-            .games
-            .map((g) => g.name),
-        ['Trio Pack (USA)'],
-      );
-    });
-
-    test('while naming a title it holds answers with the pack', () {
-      // Under `prefer` the pack is what answers for its contents, so asking for
-      // one of them is asking for it.
-      expect(
-        const GameSelector()
-            .select(
-              dat: _dat(games),
-              config: config,
-              scoring: ScoringConfig(languagePriority: ['En']),
-              wishlist: const ['Beta'],
-              cloneList: cl,
-            )
-            .games
-            .map((g) => g.name),
-        ['Trio Pack (USA)'],
-      );
-    });
-
-    test('and with the release itself once supersets are ignored', () {
-      expect(
-        const GameSelector()
-            .select(
-              dat: _dat(games),
-              config: config,
-              scoring: ScoringConfig(
-                languagePriority: ['En'],
-                supersets: SupersetMode.ignore,
-              ),
-              wishlist: const ['Beta'],
-              cloneList: cl,
-            )
-            .games
-            .map((g) => g.name),
+    test('while naming a title it holds answers with that title', () {
+      expect(select(wishlist: const ['Beta']).games.map((g) => g.name), [
+        'Beta (USA)',
         // The pack stays for Gamma, which nothing else can answer for.
-        ['Beta (USA)', 'Trio Pack (USA)'],
-      );
+        'Trio Pack (USA)',
+      ]);
     });
   });
 
   group('clonelist filters', () {
-    // The real Nintendo 64 clonelist: `Bomberman 64` covers both the USA and
-    // Japan releases, and a matchRegions filter splits Japan out — they are
-    // different games, so one must not knock the other out of 1G1R.
+    // One searchTerm covers two regional releases and a matchRegions filter
+    // splits one out: they are different games, so neither may knock out the
+    // other.
     final bomberman = CloneList(
       name: 'x',
       variants: [
@@ -812,7 +809,7 @@ void main() {
   });
 
   group('edition tags', () {
-    // The real internal-config lists, trimmed to the entries under test.
+    // The edition tag lists, trimmed to the entries under test.
     final config = InternalConfig(
       cloneListMetadataUrl: Uri.parse('https://example.invalid'),
       defaultRegionOrder: const ['USA', 'Europe', 'Japan'],
@@ -1189,7 +1186,7 @@ void main() {
     });
 
     test('an (Alt) dump competes with its original, never duplicates it', () {
-      // MSX ships up to five dumps of one game; only the original may survive.
+      // A title can ship several dumps; only the original may survive.
       final games = [
         _game('Balance (Japan) (Alt 3)', regions: ['Japan']),
         _game('Balance (Japan)', regions: ['Japan']),
@@ -1464,6 +1461,69 @@ void main() {
       expect(
         select(games, wishlist: const ['Bomber Boy'], cloneList: cl),
         hasLength(1),
+      );
+    });
+
+    test('and into the group a conditional filter moved the title to', () {
+      // The name is declared under one group and a filter moves the regional
+      // release into another. Naming it has to open the group that ends up
+      // holding it, or that group's winner is dropped for going unnamed.
+      final cl = CloneList(
+        name: 'x',
+        variants: [
+          VariantGroup(
+            group: 'Alpha',
+            titles: const [
+              VariantTitle(searchTerm: 'Alpha'),
+              VariantTitle(
+                searchTerm: 'Shared',
+                filters: [
+                  VariantFilter(
+                    conditions: FilterConditions(matchRegions: ['Japan']),
+                    results: FilterResults(group: 'Beta'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(
+        const GameSelector()
+            .select(
+              dat: _dat([
+                _game(
+                  'Alpha (USA)',
+                  langs: const ['En'],
+                  regions: const ['USA'],
+                ),
+                _game(
+                  'Shared (Japan)',
+                  langs: const ['En'],
+                  regions: const ['Japan'],
+                ),
+                _game(
+                  'Beta (Europe)',
+                  langs: const ['En'],
+                  regions: const ['Europe'],
+                ),
+              ]),
+              config: config,
+              scoring: ScoringConfig(
+                languagePriority: ['En'],
+                regionPriority: config.defaultRegionOrder,
+              ),
+              wishlist: const ['Shared'],
+              // Nothing here carries achievements, so a group that goes unnamed
+              // is dropped outright.
+              achievements: AchievementScope.any,
+              cloneList: cl,
+            )
+            .games
+            .map((g) => g.name)
+            .toSet(),
+        // An ambiguous name yields the best dump of each game it reaches.
+        {'Alpha (USA)', 'Beta (Europe)'},
       );
     });
 

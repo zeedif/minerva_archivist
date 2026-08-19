@@ -58,10 +58,10 @@ class FilterCommand extends ArchivistCommand with SelectionCommand {
         final matching = t.dat.games.where((g) => g.name.contains(probe));
         if (matching.isEmpty) stdout.writeln('      (no game matches)');
         for (final g in matching) {
-          final group = t.selection.groups[g.name];
+          final groups = t.selection.groups[g.name];
           stdout.writeln(
             '      ${selected.contains(g.name) ? "WIN " : "    "}${g.name}  '
-            '[${group ?? "excluded before 1G1R"}]'
+            '[${groups?.join(' + ') ?? "excluded before 1G1R"}]'
             // Which join a dump got decides the group whenever two of them carry
             // achievements, so the explanation is incomplete without it.
             '${switch (t.selection.raMatches[g.name]) {

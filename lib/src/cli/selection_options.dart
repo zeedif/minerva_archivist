@@ -29,14 +29,19 @@ extension SelectedTargetX on SelectedTarget {
   /// The games whose clone group already has a dump settled inside a curated
   /// folder. Fetching another dump of one of these would put a second copy of the
   /// same game beside work built against the first.
+  ///
+  /// A pack answers for every group it holds, so owning any one of its games
+  /// settles it too — otherwise a curated single release would be duplicated by
+  /// the bundle that contains it.
   Set<String> settledByCuratedGroup(AuditReport report) {
     final settled = {
-      for (final name in report.library.curatedGames) ?selection.groups[name],
+      for (final name in report.library.curatedGames)
+        ...?selection.groups[name],
     };
     if (settled.isEmpty) return const {};
     return {
       for (final entry in selection.groups.entries)
-        if (settled.contains(entry.value)) entry.key,
+        if (entry.value.any(settled.contains)) entry.key,
     };
   }
 
@@ -137,13 +142,30 @@ extension SelectionFlags on ArgParser {
       defaultsTo: SupersetMode.prefer.name,
       allowedHelp: {
         'prefer':
-            'A pack answers for everything it contains, so those titles are not '
-            'selected again beside it.',
-        'ignore':
-            'Treat a pack as an ordinary release and choose the individual '
-            'titles on their own merits.',
+            'The subsuming edition represents its group and takes its slot, the '
+            'way a higher revision does.',
+        'ignore': 'Set the claim aside and take a plain release.',
       },
-      help: 'What a pack or subsuming edition is worth against its contents.',
+      help:
+          'What an edition that subsumes the rest of its group is worth against '
+          'it. Same game, more in it, so it is preferred by default.',
+    );
+    addOption(
+      'compilations',
+      valueHelp: 'mode',
+      allowed: CompilationMode.values.map((m) => m.name),
+      defaultsTo: CompilationMode.fill.name,
+      allowedHelp: {
+        'never': 'A pack never stands in for the games it holds.',
+        'fill':
+            'It stands in for them but ranks last, so it wins only a group with '
+            'no release of its own.',
+        'prefer': 'It takes their slots, though --priority still comes first.',
+        'first': 'It takes their slots ahead of --priority too.',
+      },
+      help:
+          'What a pack holding several games is worth against them. A bundle is '
+          'no improvement on any one of them, so it yields by default.',
     );
     addMultiOption(
       'exclude',
@@ -228,6 +250,7 @@ mixin SelectionCommand on ArchivistCommand {
             ScoreAxis.values.byName(axis),
         ],
         supersets: SupersetMode.values.byName(r.option('supersets')!),
+        compilations: CompilationMode.values.byName(r.option('compilations')!),
       ),
       wishlist: wishlistPath == null
           ? const []

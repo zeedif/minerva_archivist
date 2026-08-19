@@ -45,7 +45,8 @@ Deciden *sobre qué* juegos actúa un comando.
 | `--wishlist <ruta>` | Array JSON/JSONC de nombres a seleccionar |
 | `--wishlist-mode absolute\|subset` | Qué afirma nombrar un título. Por defecto `absolute` |
 | `--achievements any\|approved` | Seleccionar solo títulos con logros |
-| `--supersets prefer\|ignore` | Cuánto vale un pack frente a su contenido. Por defecto `prefer` |
+| `--supersets prefer\|ignore` | Cuánto vale una edición que engloba a su grupo. Por defecto `prefer` |
+| `--compilations never\|fill\|prefer\|first` | Cuánto vale un pack frente a los juegos que lleva. Por defecto `fill` |
 | `--exclude <clases>` | Descarta estas clases de volcado |
 
 ### `--lang` y `--region`
@@ -180,25 +181,38 @@ calculan contra el ejecutable del disco y no contra la imagen, así que todas la
 uniones son por nombre y `approved` no selecciona nada: es una herramienta de la
 era del cartucho.
 
-### Packs y `--supersets`
+### `--supersets`: la misma edición, mejorada
+
+Una edición que engloba al resto de su grupo —deluxe, de torneo, *amiibo+*— es el
+mismo juego con más dentro, así que se lee como una revisión: una mejora. Por eso
+**por defecto se prefiere**, y gana frente a una edición normal, frente a una
+revisión superior de esa, y frente a un volcado de una región que tengas por
+encima. Con `ignore` su reclamo se deja de lado y el grupo va a una edición normal.
+
+### `--compilations`: varios juegos en un cartucho
 
 Un clonelist lista un pack multijuego bajo **todos** los grupos que contiene, así
-que el pack responde por todos ellos. Compite por la plaza de cada juego que
-incluye y, al ganarla, la ocupa: obtienes el pack, no el pack más copias sueltas de
-lo que ya viene en él.
+que el pack puede responder por todos ellos. Pero un pack no es una mejora de nada
+—es un lote—, y aceptarlo cuesta los juegos individuales, así que **por defecto
+cede**.
 
 | Modo | Efecto |
 |---|---|
-| `prefer` | Por defecto. El pack responde por su contenido y ocupa sus plazas |
-| `ignore` | Cada grupo va a una edición propia; el pack solo cubre los grupos que nada más cubre |
+| `never` | El pack nunca sustituye a los juegos que lleva |
+| `fill` | Por defecto. Los sustituye pero va último, así que solo gana un grupo sin edición propia |
+| `prefer` | Ocupa sus plazas, aunque `--priority` sigue por delante |
+| `first` | Ocupa sus plazas también por delante de `--priority` |
 
-Nombrar uno de los títulos que lleva un pack te da el pack con `prefer`, o esa
-edición con `ignore`.
+Dos consecuencias de que `--priority` vaya antes de `prefer`: si pones `ra` ahí, un
+juego del pack que tenga logros y el pack no le quita la plaza —un lote que no
+puede desbloquear lo que sí desbloquean sus piezas no vale el hueco—, y si pones
+`lang`, gana el idioma que pediste. `first` es la forma de decir «el pack manda de
+todos modos».
 
-Lo mismo vale para una edición que engloba a otra: una edición deluxe o de torneo
-que contiene la original representa a su grupo y gana frente a una edición normal,
-frente a una revisión superior de esa, y frente a un volcado de una región que
-tengas por encima.
+Y una regla que no necesita bandera: si ya tienes uno de los juegos del pack en una
+**carpeta protegida**, el pack se considera resuelto y no se descarga, porque te
+duplicaría ese juego. Los ficheros sueltos en la raíz no cuentan: esos sí pueden ir
+a `.trash`.
 
 ### Las reediciones no son juegos distintos
 

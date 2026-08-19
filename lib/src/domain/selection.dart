@@ -333,13 +333,12 @@ final class CloneIndex {
   final List<(RegExp, CloneListMatch)> _regex;
 
   /// Every clonelist declaration claiming [fullName], most specific matcher
-  /// first: the full name, then the region-free name, then [shortKey], then a
-  /// regex — an exact spelling has to beat a catch-all pattern. All declarations
-  /// at the winning tier are returned, since a pack is declared once per group it
-  /// contains.
+  /// first: the full name, the region-free name, [shortKey], then a regex — an
+  /// exact spelling has to beat a catch-all pattern. All declarations at the
+  /// winning tier are returned, since a pack is declared once per group it holds.
   ///
-  /// [shortKey] is passed in rather than derived because building it walks every
-  /// ignored tag, and the caller needs it anyway.
+  /// [shortKey] is passed in rather than derived: building it walks every ignored
+  /// tag, and the caller needs it anyway.
   List<CloneListMatch> lookup(
     String fullName,
     String shortKey, {
@@ -384,15 +383,35 @@ typedef CloneListMatch = ({
   TitleRole role,
 });
 
-/// What a pack or subsuming edition is worth against the releases it contains.
+/// What an edition that subsumes the rest of its group is worth against it.
+///
+/// A superset is the same game, re-released with more in it, so it reads like a
+/// revision: an improvement, and preferred by default.
 enum SupersetMode {
-  /// It answers for them: it takes the slot of every group it stands for, so
-  /// those titles are not selected again beside it.
+  /// It represents the group and takes its slot.
   prefer,
 
-  /// Its claim is set aside, so a group goes to a release of its own wherever one
-  /// exists. The pack still fills a group that has nothing else to nominate.
+  /// Its claim is set aside and the group goes to a plain release.
   ignore,
+}
+
+/// What a pack holding several games is worth against the games in it.
+///
+/// A pack is not an improvement on anything — it is a bundle — so by default it
+/// yields to the individual releases and only answers for what nothing else can.
+enum CompilationMode {
+  /// It never stands in for the groups it holds; it competes only in its own.
+  never,
+
+  /// It stands in for them but ranks last, so it wins only a group with no
+  /// release of its own.
+  fill,
+
+  /// It takes their slots, though `--priority` still comes first.
+  prefer,
+
+  /// It takes their slots ahead of `--priority` too.
+  first,
 }
 
 /// Groups DAT games into clone groups using the clonelist, falling back to the
@@ -514,8 +533,7 @@ final class CloneGrouper {
       priority: priority,
       categories: categories,
       addedLanguages: added,
-      // Standing for other groups is itself a claim over them.
-      isSuperset: superset || represents.isNotEmpty,
+      isSuperset: superset,
       represents: represents,
     );
   }
@@ -645,9 +663,8 @@ final class PriorityList {
   /// The best position [values] reach, or [GameCandidate.worst] when the list
   /// admits none of them. An empty list ranks nothing.
   ///
-  /// Two orders folded into one comparable number. Scaling the primary position
-  /// by a stride wider than [_fallback] keeps the fallback from ever crossing
-  /// into the next position, so it only ever breaks ties.
+  /// Both orders fold into one number: scaling the primary position past the
+  /// fallback's length keeps the fallback to breaking ties.
   int rank(List<String> values) {
     if (_order.isEmpty) return GameCandidate.worst;
     final primary = values.isEmpty
@@ -761,6 +778,7 @@ final class ScoringConfig {
     List<String> regionFallback = const [],
     this.priority = defaultPriority,
     this.supersets = SupersetMode.prefer,
+    this.compilations = CompilationMode.fill,
   }) : languages = PriorityList(languagePriority, fallback: languageFallback),
        regions = PriorityList(regionPriority, fallback: regionFallback);
 
@@ -781,19 +799,32 @@ final class ScoringConfig {
   /// one out means.
   final List<ScoreAxis> priority;
 
-  /// What a pack is worth against the releases it stands for.
+  /// What a subsuming edition is worth against the group it replaces.
   final SupersetMode supersets;
+
+  /// What a pack is worth against the games in it.
+  final CompilationMode compilations;
 
   bool get ranksRetroAchievements => priority.contains(ScoreAxis.ra);
 
-  /// Where a candidate sits on the superset tie-break, lower being better. A
-  /// plain release is the middle value, so the mode decides whether a pack is
-  /// preferred to it or yields to it.
-  int supersetRank({required bool isSuperset}) => switch (supersets) {
-    _ when !isSuperset => 1,
-    SupersetMode.prefer => 0,
-    SupersetMode.ignore => 2,
-  };
+  /// Whether a pack's claim is weighed before [priority] rather than after.
+  bool get packsOutrankPriority => compilations == CompilationMode.first;
+
+  /// Whether a pack competes in the groups it stands for at all.
+  bool get packsStandIn => compilations != CompilationMode.never;
+
+  /// Where a candidate sits on the representation tie-break, lower being better.
+  /// A plain release takes the middle value, so each mode says only whether the
+  /// edition above it is preferred to it or yields to it.
+  int representationRank({required bool isSuperset, required bool isPack}) =>
+      switch (this) {
+        _ when isPack => switch (compilations) {
+          CompilationMode.prefer || CompilationMode.first => 0,
+          CompilationMode.fill || CompilationMode.never => 2,
+        },
+        _ when isSuperset => supersets == SupersetMode.prefer ? 0 : 2,
+        _ => 1,
+      };
 }
 
 /// The comparable 1G1R outcome, best first: production status, the [axes] the
@@ -802,12 +833,12 @@ final class ScoringConfig {
 ///
 /// Four placements carry the load:
 ///
-/// - [status] above the axes, so a preproduction dump never takes the slot for
+/// - [status] above the axes, so a preproduction dump never takes a slot for
 ///   carrying an achievement set.
-/// - The axes above the rest of the chain, so a dump is never passed over for an
-///   `(Alt)` tag or an older revision when it wins on the axis ranked highest.
-/// - [supersetRank] above [regionRank]: an edition standing for its group is
-///   exempt from being separated by region, since it stands for it in every one.
+/// - The axes above the rest, so a dump is never passed over for an `(Alt)` tag
+///   or an older revision when it wins on the axis ranked highest.
+/// - [representationRank] above [regionRank]: an edition standing for its group
+///   stands for it in every region, so region must not separate it.
 /// - [regionRank] above everything under it whether or not [axes] names region.
 ///   Nothing further down may decide between two regions, and without this a
 ///   cross-region pair falls through to the alphabetical fail-safe.
@@ -821,7 +852,8 @@ final class GameScore implements Comparable<GameScore> {
     required this.regionRank,
     required this.retroAchievements,
     required this.revision,
-    this.supersetRank = 1,
+    this.representationRank = 1,
+    this.representationFirst = false,
     this.modernRank = 0,
     this.budgetRank = 0,
     this.editionRank = 0,
@@ -840,9 +872,12 @@ final class GameScore implements Comparable<GameScore> {
 
   final int revision;
 
-  /// Where the candidate sits on the superset tie-break; see
-  /// [ScoringConfig.supersetRank].
-  final int supersetRank;
+  /// Where the candidate sits on the representation tie-break; see
+  /// [ScoringConfig.representationRank].
+  final int representationRank;
+
+  /// Whether that rank is weighed before [axes] instead of after.
+  final bool representationFirst;
 
   /// Port/compilation-rip penalty. See [EditionTags.modernRank].
   final int modernRank;
@@ -864,12 +899,15 @@ final class GameScore implements Comparable<GameScore> {
   int compareTo(GameScore other) {
     var c = status.index.compareTo(other.status.index);
     if (c != 0) return c;
+    final byRepresentation = representationRank.compareTo(
+      other.representationRank,
+    );
+    if (representationFirst && byRepresentation != 0) return byRepresentation;
     for (final axis in axes) {
       c = _onAxis(axis, other);
       if (c != 0) return c;
     }
-    c = supersetRank.compareTo(other.supersetRank);
-    if (c != 0) return c;
+    if (byRepresentation != 0) return byRepresentation;
     // Region keeps ranking even when [axes] left it out; a no-op when it didn't.
     c = _onAxis(ScoreAxis.region, other);
     if (c != 0) return c;
@@ -927,7 +965,11 @@ final class ScoringEngine {
           ? g.retroAchievements
           : RaMatch.none,
       revision: g.metadata.revision,
-      supersetRank: config.supersetRank(isSuperset: candidate.isSuperset),
+      representationRank: config.representationRank(
+        isSuperset: candidate.isSuperset,
+        isPack: candidate.isRepresentative,
+      ),
+      representationFirst: config.packsOutrankPriority,
       axes: config.priority,
     );
   }
@@ -966,7 +1008,7 @@ final class ScoringEngine {
   ]) {
     final byGroup = <String, List<GameCandidate>>{};
     for (final c in candidates) {
-      for (final key in c.groups) {
+      for (final key in config.packsStandIn ? c.groups : [c.groupKey]) {
         (byGroup[key] ??= []).add(c);
       }
     }
@@ -1232,9 +1274,11 @@ final class SelectionResult {
   final List<DatGame> games;
   final SelectionStats stats;
 
-  /// Clone group per candidate game name, winners and runners-up alike, so a
-  /// caller can ask what else competed for a slot.
-  final Map<String, String> groups;
+  /// The clone groups each candidate competed in, winners and runners-up alike,
+  /// so a caller can ask what else contested a slot. A pack lists every group it
+  /// stands for, which is what lets a caller see that owning one of its games
+  /// already settles it.
+  final Map<String, Set<String>> groups;
 
   /// How each candidate reached the RetroAchievements index. Enrichment happens
   /// inside [GameSelector.select], so a caller holding the raw DAT cannot tell
@@ -1350,7 +1394,10 @@ final class GameSelector {
 
     return SelectionResult(
       games: [for (final c in chosen) c.game],
-      groups: {for (final c in candidates) c.game.name: c.groupKey},
+      groups: {
+        for (final c in candidates)
+          c.game.name: {if (scoring.packsStandIn) ...c.groups else c.groupKey},
+      },
       raMatches: {
         for (final c in candidates) c.game.name: c.game.retroAchievements,
       },
@@ -1412,11 +1459,12 @@ final class GameSelector {
     ];
   }
 
-  /// The games a wishlist names, widened to the clone group so the orders still
-  /// choose which dump represents a title however you spelled it.
+  /// The games a wishlist names, widened to the whole clone group so the orders
+  /// still choose which dump represents a title however you spelled it.
   ///
-  /// A pack is the exception: naming one asks for the pack, so a group it merely
-  /// contains admits only the pack itself.
+  /// Widening follows the group a title *resolved* into, since a conditional
+  /// filter can move it out of the one that declared it. A pack is the exception:
+  /// naming one asks for the pack, not for each title it holds.
   static Set<String> _wishlisted(
     List<GameCandidate> candidates,
     List<String> wishlist,
@@ -1425,10 +1473,16 @@ final class GameSelector {
     final reach = wishlistReach(wishlist, [
       for (final c in candidates) c.game,
     ], cloneList);
+    final open = {
+      ...reach.groups,
+      for (final c in candidates)
+        if (reach.names.contains(c.game.name) && !c.isRepresentative)
+          ...c.groups,
+    };
     return {
       for (final c in candidates)
         if (reach.names.contains(c.game.name) ||
-            c.groups.any(reach.groups.contains) ||
+            c.groups.any(open.contains) ||
             (c.isRepresentative && c.groups.any(reach.packGroups.contains)))
           c.game.name,
     };
