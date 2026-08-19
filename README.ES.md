@@ -36,8 +36,9 @@ y se cachean en local.
 - **Lee cualquier DAT.** Detecta si es No-Intro, Redump o MAME-Redump CHD a
   partir del propio archivo, sin banderas de tipo.
 - **Elige un juego por título.** Estado de producción → idioma → región → logros →
-  prioridad del clonelist → revisión, y un pack multijuego responde por todo lo
-  que contiene en vez de duplicarlo.
+  prioridad del clonelist → revisión. Una reedición mejorada sustituye a la edición
+  que reemplaza; un pack multijuego cede ante los juegos que lleva salvo que le
+  digas lo contrario.
 - **Descarta lo que no quieres.** Una sola lista `--exclude` cubre prototipos,
   betas, discos de prueba, discos extra, piratas, volcados MIA, aplicaciones,
   BIOS, manuales, coverdiscs y vídeo, reconocidos por categoría o por nombre.

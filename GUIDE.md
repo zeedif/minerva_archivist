@@ -44,7 +44,8 @@ They decide *which* games a command acts on.
 | `--wishlist <path>` | JSON/JSONC array of game names to select |
 | `--wishlist-mode absolute\|subset` | What naming a title claims. Default `absolute` |
 | `--achievements any\|approved` | Select only titles with achievements |
-| `--supersets prefer\|ignore` | What a pack is worth against its contents. Default `prefer` |
+| `--supersets prefer\|ignore` | What an edition subsuming its group is worth. Default `prefer` |
+| `--compilations never\|fill\|prefer\|first` | What a pack is worth against the games in it. Default `fill` |
 | `--exclude <kinds>` | Drop these kinds of dump outright |
 
 ### `--lang` and `--region`
@@ -173,24 +174,36 @@ Two caveats. RetroAchievements covers no Xbox, Xbox 360, PS3, 3DS or Vita, so
 against the disc's executable rather than the image, so every join is by name and
 `approved` selects nothing — it is a cartridge-era tool.
 
-### Packs and `--supersets`
+### `--supersets`: the same edition, improved
+
+An edition that subsumes the rest of its group — deluxe, tournament, *amiibo+* — is
+the same game with more in it, so it reads like a revision: an improvement. It is
+therefore **preferred by default**, beating a plain release, a higher revision of
+one, and a dump from a region you rank above it. `ignore` sets the claim aside and
+the group goes to a plain release.
+
+### `--compilations`: several games on one cartridge
 
 A clonelist lists a multi-game pack under **every** group it contains, so the pack
-stands for all of them. It competes for the slot of each game inside it and,
-winning, fills it — you get the pack, not the pack plus loose copies of what is
-already on it.
+*can* answer for all of them. But a pack is no improvement on anything — it is a
+bundle — and taking it costs you the individual games, so it **yields by default**.
 
 | Mode | Effect |
 |---|---|
-| `prefer` | Default. The pack answers for its contents and takes their slots |
-| `ignore` | Each group goes to a release of its own; the pack only fills groups nothing else covers |
+| `never` | The pack never stands in for the games it holds |
+| `fill` | Default. It stands in for them but ranks last, so it wins only a group with no release of its own |
+| `prefer` | It takes their slots, though `--priority` still comes first |
+| `first` | It takes their slots ahead of `--priority` too |
 
-Naming one of the titles a pack holds gets you the pack under `prefer`, or that
-release under `ignore`.
+Two consequences of `--priority` coming before `prefer`: with `ra` on the list, a
+game in the pack that carries achievements when the pack does not keeps its slot —
+a bundle that cannot unlock what its pieces can is not worth the space — and with
+`lang`, the language you asked for wins. `first` is how you say "the pack anyway".
 
-The same applies to a subsuming edition: a deluxe or tournament edition that
-contains the original release represents its group and beats a plain release, a
-higher revision of one, and a dump from a region you rank above it.
+And one rule that needs no flag: if you already hold one of the pack's games in a
+**protected folder**, the pack counts as settled and is not fetched, since it would
+duplicate that game. Loose files in the root do not count — those can still go to
+`.trash`.
 
 ### Re-releases are not separate games
 

@@ -34,8 +34,9 @@ and cached locally.
 - **Reads any DAT you throw at it.** No-Intro, Redump and MAME-Redump CHD sets
   are detected from the file itself — no type flags.
 - **Picks one game per title.** Production status → language → region →
-  achievements → clonelist priority → revision, and a multi-game pack answers for
-  everything on it instead of duplicating it.
+  achievements → clonelist priority → revision. An enhanced re-release stands in
+  for the edition it replaces; a multi-game pack yields to the games in it unless
+  you say otherwise.
 - **Cuts what you don't want.** One `--exclude` list covers prototypes, betas,
   trial discs, bonus discs, pirates, MIA dumps, applications, BIOS, manuals,
   coverdiscs and video — recognised by category or by name.
