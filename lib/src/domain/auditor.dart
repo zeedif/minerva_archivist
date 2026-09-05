@@ -150,7 +150,9 @@ final class RomAuditor {
     /// to [dat], i.e. recognize only the selected set.
     DatFile? catalog,
 
-    /// Accept a local `.chd` for a raw Redump entry via unified hashes.
+    /// Accept a local `.chd` for a raw Redump entry: via a MAME-Redump
+    /// `chdRoms` hash, or via the CHD header's own raw-payload hash lining up
+    /// with the raw Redump dump directly (see `ChdHeader`).
     bool matchChd = true,
 
     /// When false, do a fast name/size-only pass (no hashing).
@@ -197,6 +199,14 @@ final class RomAuditor {
     _RomRef? lookup(FileHashes h) {
       if (h.sha1 != null) {
         final hit = bySha1[h.sha1!];
+        if (hit != null) return hit;
+      }
+      // A .chd's raw-payload hash: for the disc formats chdman stores as a
+      // flat byte stream (PSP, GameCube, Wii, Xbox...) this equals the raw
+      // Redump dump's own SHA-1, so it can complete a `roms` entry directly —
+      // gated by matchChd, same as accepting a chd via its container identity.
+      if (matchChd && h.altSha1 != null) {
+        final hit = bySha1[h.altSha1!];
         if (hit != null) return hit;
       }
       if (h.md5 != null) {
@@ -308,7 +318,12 @@ final class RomAuditor {
         foundFormat = m.foundFormat;
         final wrongName = g.roms.any((r) {
           final mm = matches[_key(g, r)];
-          return mm != null && mm.foundName != r.name;
+          if (mm == null) return false;
+          // A .chd completing a raw entry via its embedded raw-payload hash is
+          // correctly named by construction: its extension always differs from
+          // the raw dump's, which isn't the "wrong name" this check looks for.
+          if (mm.foundFormat == RomFormat.chd) return false;
+          return mm.foundName != r.name;
         });
         status = wrongName ? RomStatus.wrongName : RomStatus.present;
       } else if (chdPresent) {

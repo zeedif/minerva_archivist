@@ -1,7 +1,27 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:minerva_archivist/minerva_archivist.dart';
 import 'package:test/test.dart';
+
+/// Builds a minimal, valid CHD v5 header (the only bytes [ChdHeader] reads),
+/// stamped with the given raw+meta and raw-only SHA-1 identities.
+Uint8List _fakeChdV5Header({required String sha1, required String rawSha1}) {
+  final header = Uint8List(124);
+  header.setRange(0, 8, ascii.encode('MComprHD'));
+  ByteData.view(header.buffer).setUint32(8, 124);
+  ByteData.view(header.buffer).setUint32(12, 5);
+  void putHex(int offset, String hex) {
+    for (var i = 0; i < 20; i++) {
+      header[offset + i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
+    }
+  }
+
+  putHex(64, rawSha1);
+  putHex(84, sha1);
+  return header;
+}
 
 const _noIntroXml = '''
 <?xml version="1.0"?>
@@ -176,6 +196,128 @@ void main() {
       expect(report.present, isEmpty, reason: 'a trashed copy is not owned');
       expect(report.missing.length, 1);
       expect(report.unknownFiles, isEmpty);
+    });
+
+    // Real chdman builds compress the same source disc into different bytes
+    // depending on version/codec/hunk size, so hashing a .chd's own bytes (as
+    // every other format is hashed) only recognizes one specific build's
+    // output. The header's embedded hashes don't change with compression —
+    // see ChdHeader.
+    group('CHD header identity', () {
+      test('ChdHeader.read parses the embedded v5 hashes', () async {
+        final f = File('${tmp.path}/probe.chd')..writeAsBytesSync(
+          _fakeChdV5Header(
+            sha1: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            rawSha1: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          ),
+        );
+        final header = await ChdHeader.read(f);
+        expect(header, isNotNull);
+        expect(header!.version, 5);
+        expect(header.sha1, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        expect(header.rawSha1, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+      });
+
+      test('matches a MAME-Redump chdRoms entry by the CHD identity hash, '
+          'even though the file bytes match nothing', () async {
+        File('${tmp.path}/Some Game (Japan).chd').writeAsBytesSync(
+          _fakeChdV5Header(
+            sha1: '306b65cb7fa6fb4f15d1b093d01f9d3f92e4a153',
+            rawSha1: '0000000000000000000000000000000000000000'.substring(0, 40),
+          ),
+        );
+        final dat = DatFile(
+          header: const DatHeader(name: 'T', flavor: DatFlavor.mameRedump),
+          games: const [
+            DatGame(
+              name: 'Some Game (Japan)',
+              roms: [],
+              chdRoms: [
+                RomEntry(
+                  name: 'Some Game (Japan).chd',
+                  size: 0,
+                  format: RomFormat.chd,
+                  sha1: '306b65cb7fa6fb4f15d1b093d01f9d3f92e4a153',
+                ),
+              ],
+              metadata: GameMetadata(),
+            ),
+          ],
+        );
+
+        final report = await const RomAuditor().audit(dat: dat, romRoot: tmp);
+        expect(report.present.length, 1);
+        expect(report.present.single.foundFormat, RomFormat.chd);
+      });
+
+      test('completes a raw Redump entry via the CHD raw-payload hash, and '
+          'the extension mismatch this implies is not flagged wrongName', () async {
+        File('${tmp.path}/Ape Escape (Europe).chd').writeAsBytesSync(
+          _fakeChdV5Header(
+            sha1: '0000000000000000000000000000000000000000'.substring(0, 40),
+            rawSha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
+          ),
+        );
+        final dat = DatFile(
+          header: const DatHeader(name: 'T', flavor: DatFlavor.redump),
+          games: const [
+            DatGame(
+              name: 'Ape Escape (Europe)',
+              roms: [
+                RomEntry(
+                  name: 'Ape Escape (Europe).iso',
+                  size: 801603584,
+                  format: RomFormat.raw,
+                  sha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
+                ),
+              ],
+              metadata: GameMetadata(),
+            ),
+          ],
+        );
+
+        final report = await const RomAuditor().audit(dat: dat, romRoot: tmp);
+        expect(report.present.length, 1, reason: 'the .chd must be recognized');
+        expect(report.present.single.foundFormat, RomFormat.chd);
+        expect(
+          report.results.every((r) => r.status != RomStatus.wrongName),
+          isTrue,
+        );
+      });
+
+      test('matchChd: false disables the raw-payload match too', () async {
+        File('${tmp.path}/Ape Escape (Europe).chd').writeAsBytesSync(
+          _fakeChdV5Header(
+            sha1: '0000000000000000000000000000000000000000'.substring(0, 40),
+            rawSha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
+          ),
+        );
+        final dat = DatFile(
+          header: const DatHeader(name: 'T', flavor: DatFlavor.redump),
+          games: const [
+            DatGame(
+              name: 'Ape Escape (Europe)',
+              roms: [
+                RomEntry(
+                  name: 'Ape Escape (Europe).iso',
+                  size: 801603584,
+                  format: RomFormat.raw,
+                  sha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
+                ),
+              ],
+              metadata: GameMetadata(),
+            ),
+          ],
+        );
+
+        final report = await const RomAuditor().audit(
+          dat: dat,
+          romRoot: tmp,
+          matchChd: false,
+        );
+        expect(report.missing.length, 1);
+        expect(report.present, isEmpty);
+      });
     });
   });
 }

@@ -8,6 +8,8 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
+import 'chd_header.dart';
+
 final class ScannedFile {
   const ScannedFile({
     required this.file,
@@ -62,6 +64,7 @@ final class FileHashes {
     this.md5,
     this.sha1,
     this.sha256,
+    this.altSha1,
   });
 
   final int size;
@@ -69,6 +72,15 @@ final class FileHashes {
   final String? md5;
   final String? sha1;
   final String? sha256;
+
+  /// A second SHA-1 identity to check when [sha1] finds no match.
+  ///
+  /// Only ever set for a `.chd`, whose header carries two distinct hashes: one
+  /// that identifies the compressed container itself (surfaced as [sha1]) and
+  /// one for its raw, uncompressed payload alone (surfaced here) — see
+  /// [ChdHeader.rawSha1]. The raw one can match a plain Redump dump directly,
+  /// for the disc formats chdman stores as a flat byte stream.
+  final String? altSha1;
 }
 
 /// Computes ROM digests. Implementations should stream each source once and
@@ -106,6 +118,11 @@ final class StreamingHasher implements Hasher {
     bool sha1 = true,
     bool sha256 = false,
   }) async {
+    if (p.extension(file.path).toLowerCase() == '.chd') {
+      final fromHeader = await _hashChd(file);
+      if (fromHeader != null) return fromHeader;
+    }
+
     final crc = crc32 ? Crc32() : null;
     final md5d = md5 ? _ChunkedDigest(crypto.md5) : null;
     final sha1d = sha1 ? _ChunkedDigest(crypto.sha1) : null;
@@ -126,6 +143,20 @@ final class StreamingHasher implements Hasher {
       md5: md5d?.close(),
       sha1: sha1d?.close(),
       sha256: sha256d?.close(),
+    );
+  }
+
+  /// Reads a `.chd`'s embedded identity hashes instead of streaming its
+  /// (compressed) bytes — see [ChdHeader]. `null` when [file] isn't a CHD this
+  /// understands, so the caller falls back to hashing it as a plain file.
+  Future<FileHashes?> _hashChd(File file) async {
+    final header = await ChdHeader.read(file);
+    if (header == null) return null;
+    return FileHashes(
+      size: await file.length(),
+      sha1: header.sha1,
+      altSha1: header.rawSha1,
+      md5: header.md5,
     );
   }
 
