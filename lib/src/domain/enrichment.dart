@@ -22,7 +22,12 @@ final class DatEnricher {
     // at all, since RA hashes the primary executable, and a re-hashed flavor
     // reaches some. Scoping the name fallback to the entries no hash reaches
     // covers both without letting a name stand in for an already-claimed dump.
-    final beyondHashes = ra?.namesBeyondHashes(dat.games) ?? const <String>{};
+    //
+    // Kept as raw names, not just a set of matched keys: a same-named RA entry
+    // that also tags a region only speaks for the sibling wearing that region,
+    // not for all of them — see `_raMatchFor`.
+    final beyondHashes =
+        ra?.unclaimedEntryNames(dat.games) ?? const <String, List<String>>{};
 
     final games = <DatGame>[];
     for (final g in dat.games) {
@@ -61,9 +66,7 @@ final class DatEnricher {
               ? RaMatch.none
               : ra.supportsGame(g)
               ? RaMatch.byHash
-              : beyondHashes.contains(RetroAchievementsIndex.normalize(g.name))
-              ? RaMatch.byName
-              : RaMatch.none,
+              : _nameMatchFor(g, effectiveRegions, beyondHashes, regionSet),
         ),
       );
     }
@@ -95,4 +98,38 @@ final class DatEnricher {
     }
     return const [];
   }
+
+  /// The RA name join for [g], given the raw entry names sharing its
+  /// normalized title that no hash reaches (see [unclaimedEntryNames]).
+  ///
+  /// An entry that names a region only speaks for the sibling wearing that
+  /// region: [RaMatch.byNameRegion] when [g] is the one it names,
+  /// [RaMatch.none] when it names a *different* one — never the same credit
+  /// regardless of region. An entry naming no region at all is the original,
+  /// genuinely region-free case, so every sibling still gets [RaMatch.byName].
+  RaMatch _nameMatchFor(
+    DatGame g,
+    List<String> effectiveRegions,
+    Map<String, List<String>> beyondHashes,
+    Set<String> regionSet,
+  ) {
+    final entryNames = beyondHashes[RetroAchievementsIndex.normalize(g.name)];
+    if (entryNames == null) return RaMatch.none;
+
+    var regionFree = false;
+    for (final name in entryNames) {
+      final entryRegions = _regionsFromTags(_tagsOf(name), regionSet);
+      if (entryRegions.isEmpty) {
+        regionFree = true;
+      } else if (entryRegions.any(effectiveRegions.contains)) {
+        return RaMatch.byNameRegion;
+      }
+    }
+    return regionFree ? RaMatch.byName : RaMatch.none;
+  }
+
+  Set<String> _tagsOf(String name) => {
+    for (final m in RegExp(r'\(([^)]*)\)').allMatches(name))
+      if (m.group(1) != null) m.group(1)!.trim(),
+  };
 }

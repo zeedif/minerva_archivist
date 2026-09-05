@@ -296,22 +296,40 @@ final class RetroAchievementsIndex {
   ///
   /// Excluding titles some hash already claimed is what stops a region-free name
   /// carrying one region's achievements across to its siblings.
-  Set<String> namesBeyondHashes(Iterable<DatGame> games) {
+  Set<String> namesBeyondHashes(Iterable<DatGame> games) =>
+      unclaimedEntryNames(games).keys.toSet();
+
+  /// Like [namesBeyondHashes], but keeping each entry's own (un-normalized)
+  /// name grouped under its key — so a caller can inspect the region *that*
+  /// entry names, instead of just knowing some entry shares the title.
+  ///
+  /// [DatEnricher] uses this to tell a same-named sibling from the one the RA
+  /// entry actually documents: a region tag on the entry only credits the game
+  /// sharing that region, rather than every sibling alike.
+  Map<String, List<String>> unclaimedEntryNames(Iterable<DatGame> games) {
     final datHashes = <String>{
       for (final g in games)
         for (final rom in g.roms)
           ...[?rom.crc32, ?rom.md5, ?rom.sha1, ?rom.sha256],
     };
-    final claimed = <String>{};
-    final unclaimed = <String>{};
+    final claimedKeys = <String>{};
+    final byKey = <String, List<String>>{};
     for (final e in _entries) {
       if (e.name.isEmpty) continue;
       final reached = [?e.crc32, ?e.md5, ?e.sha1, ?e.sha256].any(
         datHashes.contains,
       );
-      (reached ? claimed : unclaimed).add(normalize(e.name));
+      final key = normalize(e.name);
+      if (reached) {
+        claimedKeys.add(key);
+        continue;
+      }
+      byKey.putIfAbsent(key, () => []).add(e.name);
     }
-    return unclaimed.difference(claimed);
+    for (final key in claimedKeys) {
+      byKey.remove(key);
+    }
+    return byKey;
   }
 }
 

@@ -90,8 +90,13 @@ enum DatFlavor { noIntro, redump, mameRedump, retool, unknown }
 /// A hash join proves the achievement set was authored against these bytes. A
 /// name join only proves RA covers a title so named: RA sometimes validates an
 /// undocumented variant, leaving the title the only bridge back to the catalogued
-/// dump. Ordered so `index` doubles as a confidence ranking for 1G1R.
-enum RaMatch { none, byName, byHash }
+/// dump — and because that fallback strips region along with everything else, it
+/// would otherwise credit every regional sibling identically. [byNameRegion] is
+/// the sharper version of that join: the RA entry names a region, and this dump's
+/// is the one it names, so only that sibling gets the stronger claim — a sibling
+/// the RA entry does *not* name gets none at all, rather than the same credit by
+/// default. Ordered so `index` doubles as a confidence ranking for 1G1R.
+enum RaMatch { none, byName, byNameRegion, byHash }
 
 /// Production/release status, declared best-first so `index` doubles as a
 /// ranking for 1G1R scoring.

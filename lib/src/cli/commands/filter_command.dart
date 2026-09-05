@@ -66,6 +66,7 @@ class FilterCommand extends ArchivistCommand with SelectionCommand {
             // achievements, so the explanation is incomplete without it.
             '${switch (t.selection.raMatches[g.name]) {
               RaMatch.byHash => '  ra:hash',
+              RaMatch.byNameRegion => '  ra:name+region',
               RaMatch.byName => '  ra:name',
               _ => '',
             }}',

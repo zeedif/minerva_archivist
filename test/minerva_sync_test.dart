@@ -138,6 +138,92 @@ void main() {
         expect(ra['Rehashed (Europe)'], isTrue, reason: 'matched by name');
         expect(ra['Rehashed (USA)'], isTrue, reason: 'same region-free name');
       });
+
+      // Region-aware tests need `rawTags` populated the way `LogiqxDatParser`
+      // populates it from a real name, since `DatEnricher` reads a game's own
+      // region from there before it ever looks at the RA entry's.
+      DatGame taggedGame(String name, String sha1) => DatGame(
+        name: name,
+        roms: [
+          RomEntry(
+            name: '$name.nds',
+            size: 4,
+            format: RomFormat.cartridge,
+            sha1: sha1,
+          ),
+        ],
+        metadata: GameMetadata(
+          rawTags: {
+            for (final m in RegExp(r'\(([^)]*)\)').allMatches(name))
+              if (m.group(1) != null) m.group(1)!,
+          },
+        ),
+      );
+
+      test(
+        'a region-tagged entry only credits the sibling wearing that region',
+        () {
+          // The bug this guards: Redump re-verified the dump after RA
+          // catalogued it, so the achievement set's own hash reaches nothing
+          // current — but its name still says "Europe", and a USA sibling is
+          // not that dump merely for sharing the title.
+          final regionTagged = RetroAchievementsIndex(
+            'Sony - PlayStation Portable',
+            const [RetroAchievementsEntry(name: 'Sequel (Europe)', sha1: 'stale')],
+          );
+          final config = InternalConfig(
+            cloneListMetadataUrl: Uri.parse('https://example.invalid'),
+            defaultRegionOrder: const ['USA', 'Europe', 'Japan'],
+          );
+          final enriched = const DatEnricher().enrich(
+            DatFile(
+              header: const DatHeader(name: 't', flavor: DatFlavor.noIntro),
+              games: [
+                taggedGame('Sequel (Europe)', 'cccc'),
+                taggedGame('Sequel (USA)', 'dddd'),
+              ],
+            ),
+            config: config,
+            ra: regionTagged,
+          );
+          final byName = {
+            for (final g in enriched.games) g.name: g.retroAchievements,
+          };
+          expect(byName['Sequel (Europe)'], RaMatch.byNameRegion);
+          expect(
+            byName['Sequel (USA)'],
+            RaMatch.none,
+            reason: "the entry names Europe, not USA — it isn't this dump",
+          );
+        },
+      );
+
+      test('a genuinely region-free entry still credits every sibling', () {
+        final regionFree = RetroAchievementsIndex(
+          'Sony - PlayStation Portable',
+          const [RetroAchievementsEntry(name: 'Trilogy', sha1: 'stale')],
+        );
+        final config = InternalConfig(
+          cloneListMetadataUrl: Uri.parse('https://example.invalid'),
+          defaultRegionOrder: const ['USA', 'Europe', 'Japan'],
+        );
+        final enriched = const DatEnricher().enrich(
+          DatFile(
+            header: const DatHeader(name: 't', flavor: DatFlavor.noIntro),
+            games: [
+              taggedGame('Trilogy (Europe)', 'cccc'),
+              taggedGame('Trilogy (USA)', 'dddd'),
+            ],
+          ),
+          config: config,
+          ra: regionFree,
+        );
+        final byName = {
+          for (final g in enriched.games) g.name: g.retroAchievements,
+        };
+        expect(byName['Trilogy (Europe)'], RaMatch.byName);
+        expect(byName['Trilogy (USA)'], RaMatch.byName);
+      });
     });
   });
 }
