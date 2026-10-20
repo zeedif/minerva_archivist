@@ -291,6 +291,20 @@ final class RetroAchievementsIndex {
   /// computed differently from raw Redump file hashes.
   bool supportsName(String gameName) => _names.contains(normalize(gameName));
 
+  late final Map<String, Set<String>> _sha1sByTitle = () {
+    final byTitle = <String, Set<String>>{};
+    for (final e in _entries) {
+      if (e.sha1 != null) {
+        byTitle.putIfAbsent(normalize(e.name), () => {}).add(e.sha1!);
+      }
+    }
+    return byTitle;
+  }();
+
+  /// SHA-1s of the dumps listed under [gameName]'s title.
+  Set<String> sha1sTitled(String gameName) =>
+      _sha1sByTitle[normalize(gameName)] ?? const {};
+
   /// The titles here that no hash in [games] reaches, keyed as [supportsName]
   /// keys — the only entries a name match may stand in for.
   ///

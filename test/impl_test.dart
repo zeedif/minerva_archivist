@@ -198,6 +198,70 @@ void main() {
       expect(report.unknownFiles, isEmpty);
     });
 
+    group('a dump RetroAchievements validates instead of the DAT one', () {
+      const helloSha1 = 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d';
+      const worldSha1 = '7c211433f02071597741e6ff5a8ea34789abbf43';
+
+      DatGame title(String name, String sha1, {Set<String> raDumps = const {}}) =>
+          DatGame(
+            name: name,
+            roms: [
+              RomEntry(
+                name: '$name.min',
+                size: 5,
+                format: RomFormat.cartridge,
+                sha1: sha1,
+              ),
+            ],
+            metadata: const GameMetadata(),
+            retroAchievements: raDumps.isEmpty ? RaMatch.none : RaMatch.byName,
+            raDumps: raDumps,
+          );
+
+      DatFile datOf(List<DatGame> games) => DatFile(
+        header: const DatHeader(name: 'T', flavor: DatFlavor.noIntro),
+        games: games,
+      );
+
+      test('settles a missing game and is not pruned', () async {
+        File('${tmp.path}/Rehashed (Japan).min').writeAsStringSync('hello');
+        final report = await const RomAuditor().audit(
+          dat: datOf([title('Rehashed (Japan)', 'dead', raDumps: {helloSha1})]),
+          romRoot: tmp,
+        );
+        expect(report.present.single.game.name, 'Rehashed (Japan)');
+        expect(report.unknownFiles, isEmpty);
+      });
+
+      test('is just a stray when RA does not name it for the game', () async {
+        File('${tmp.path}/Elsewhere.min').writeAsStringSync('hello');
+        final report = await const RomAuditor().audit(
+          dat: datOf([title('Rehashed (Japan)', 'dead')]),
+          romRoot: tmp,
+        );
+        expect(report.missing.single.game.name, 'Rehashed (Japan)');
+        expect(report.unknownFiles, hasLength(1));
+      });
+
+      test('never takes the place of a sibling already on disk', () async {
+        File('${tmp.path}/Held (Japan).min').writeAsStringSync('hello');
+        File('${tmp.path}/Lacking (Japan).min').writeAsStringSync('world');
+        final report = await const RomAuditor().audit(
+          dat: datOf([
+            title('Held (Japan)', helloSha1, raDumps: {worldSha1}),
+            title('Lacking (Japan)', 'dead', raDumps: {worldSha1}),
+          ]),
+          romRoot: tmp,
+        );
+        final at = {
+          for (final a in report.present) a.game.name: a.location!.path,
+        };
+        expect(at['Held (Japan)'], endsWith('Held (Japan).min'));
+        expect(at['Lacking (Japan)'], endsWith('Lacking (Japan).min'));
+        expect(report.unknownFiles, isEmpty);
+      });
+    });
+
     // Real chdman builds compress the same source disc into different bytes
     // depending on version/codec/hunk size, so hashing a .chd's own bytes (as
     // every other format is hashed) only recognizes one specific build's

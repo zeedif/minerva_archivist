@@ -173,6 +173,11 @@ WIN Dragon Quest - The Hand of the Heavenly Bride (Europe)  [...]  ra:name
     Dragon Quest V - Hand of the Heavenly Bride (USA)       [...]
 ```
 
+A name join also protects the file you hold. When the DAT lists none of a
+title's dumps that RetroAchievements validates, a file of yours that carries one
+of those RA hashes counts as the game: `audit` reports it present, so it is not
+fetched again and `prune` leaves it alone.
+
 Two caveats. RetroAchievements covers no Xbox, Xbox 360, PS3, 3DS or Vita, so
 `--achievements` selects nothing there. And on disc systems the sets are hashed
 against the disc's executable rather than the image, so every join is by name and

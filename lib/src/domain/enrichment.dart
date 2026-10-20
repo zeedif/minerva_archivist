@@ -50,6 +50,12 @@ final class DatEnricher {
         }
       }
 
+      final raMatch = ra == null
+          ? RaMatch.none
+          : ra.supportsGame(g)
+          ? RaMatch.byHash
+          : _nameMatchFor(g, effectiveRegions, beyondHashes, regionSet);
+
       final status = (mias != null && _isMia(g, mias))
           ? ProductionStatus.mia
           : g.metadata.status;
@@ -62,11 +68,10 @@ final class DatEnricher {
             localName: md?.localName ?? g.metadata.localName,
             status: status,
           ),
-          retroAchievements: ra == null
-              ? RaMatch.none
-              : ra.supportsGame(g)
-              ? RaMatch.byHash
-              : _nameMatchFor(g, effectiveRegions, beyondHashes, regionSet),
+          retroAchievements: raMatch,
+          raDumps: raMatch == RaMatch.byName || raMatch == RaMatch.byNameRegion
+              ? ra!.sha1sTitled(g.name)
+              : const {},
         ),
       );
     }

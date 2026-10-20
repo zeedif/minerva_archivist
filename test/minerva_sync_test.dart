@@ -139,6 +139,25 @@ void main() {
         expect(ra['Rehashed (USA)'], isTrue, reason: 'same region-free name');
       });
 
+      test('the enricher hands a name-joined game the dumps RA validates', () {
+        final enriched = const DatEnricher().enrich(
+          DatFile(
+            header: const DatHeader(name: 't', flavor: DatFlavor.noIntro),
+            games: [
+              game('Joined (Europe)', 'aaaa'),
+              game('Rehashed (Europe)', 'cccc'),
+            ],
+          ),
+          config: InternalConfig(
+            cloneListMetadataUrl: Uri.parse('https://example.invalid'),
+          ),
+          ra: index,
+        );
+        final dumps = {for (final g in enriched.games) g.name: g.raDumps};
+        expect(dumps['Joined (Europe)'], isEmpty);
+        expect(dumps['Rehashed (Europe)'], {'bbbb'});
+      });
+
       // Region-aware tests need `rawTags` populated the way `LogiqxDatParser`
       // populates it from a real name, since `DatEnricher` reads a game's own
       // region from there before it ever looks at the RA entry's.

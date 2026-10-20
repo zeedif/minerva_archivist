@@ -179,6 +179,11 @@ WIN Dragon Quest - The Hand of the Heavenly Bride (Europe)  [...]  ra:name
     Dragon Quest V - Hand of the Heavenly Bride (USA)       [...]
 ```
 
+Una coincidencia por nombre también protege el archivo que ya tienes. Cuando el
+DAT no lista ninguno de los volcados de un título que RetroAchievements valida,
+un archivo tuyo con uno de esos hashes de RA cuenta como el juego: `audit` lo da
+por presente, así que no se vuelve a descargar y `prune` no lo toca.
+
 Dos advertencias. RetroAchievements no cubre Xbox, Xbox 360, PS3, 3DS ni Vita, así
 que ahí `--achievements` no selecciona nada. Y en los sistemas de disco los sets se
 calculan contra el ejecutable del disco y no contra la imagen, así que todas las

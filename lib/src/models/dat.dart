@@ -349,6 +349,7 @@ final class DatGame {
     this.category,
     this.chdRoms = const [],
     this.retroAchievements = RaMatch.none,
+    this.raDumps = const {},
   });
 
   final String name;
@@ -371,6 +372,10 @@ final class DatGame {
   /// never read from a DAT attribute.
   final RaMatch retroAchievements;
 
+  /// SHA-1s of the dumps RetroAchievements validates under this title, when it
+  /// reached them by name alone: none of them is a dump the DAT lists.
+  final Set<String> raDumps;
+
   /// Whether achievements exist at all. Filters ask this; the 1G1R tie-break asks
   /// [retroAchievements], where the strength of the claim matters.
   bool get supportsRetroAchievements => retroAchievements != RaMatch.none;
@@ -385,6 +390,7 @@ final class DatGame {
     List<RomEntry>? chdRoms,
     GameMetadata? metadata,
     RaMatch? retroAchievements,
+    Set<String>? raDumps,
   }) {
     return DatGame(
       name: name ?? this.name,
@@ -394,6 +400,7 @@ final class DatGame {
       chdRoms: chdRoms ?? this.chdRoms,
       metadata: metadata ?? this.metadata,
       retroAchievements: retroAchievements ?? this.retroAchievements,
+      raDumps: raDumps ?? this.raDumps,
     );
   }
 }

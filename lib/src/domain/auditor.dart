@@ -194,6 +194,9 @@ final class RomAuditor {
     // before the copy that earns the slot, so the choice waits for the full scan.
     final claimants = <String, List<_Claim>>{};
     final unknown = <File>[];
+    // What no DAT entry claims, by SHA-1: a dump RetroAchievements validates may
+    // be among it.
+    final unlisted = <String, _Claim>{};
     final library = LibraryIndexBuilder();
 
     _RomRef? lookup(FileHashes h) {
@@ -251,23 +254,37 @@ final class RomAuditor {
         var claimedHere = false;
         LocatedRom? located;
         for (final e in entries.entries) {
+          final claim = (
+            file: sf.file,
+            relativePath: sf.relativePath,
+            foundName: p.basename(e.key),
+            foundFormat: _formatFor(e.key),
+          );
           final ref = lookup(e.value);
-          if (ref == null) continue;
+          if (ref == null) {
+            if (e.value.sha1 != null) unlisted[e.value.sha1!] = claim;
+            continue;
+          }
           located ??= LocatedRom(game: ref.game, rom: ref.rom, file: sf.file);
           final key = _key(ref.game, ref.rom);
-          claimants
-              .putIfAbsent(key, () => [])
-              .add((
-                file: sf.file,
-                relativePath: sf.relativePath,
-                foundName: p.basename(e.key),
-                foundFormat: _formatFor(e.key),
-              ));
+          claimants.putIfAbsent(key, () => []).add(claim);
           claimedHere |= selectedKeys.contains(key);
         }
         library.add(sf.file, sf.relativePath, located);
         if (!claimedHere) unknown.add(sf.file);
       }
+    }
+
+    // A game still missing whose title RetroAchievements validates under a dump
+    // the DAT does not list: that dump answers for it instead of being pruned
+    // as a stray and fetched again.
+    for (final g in dat.games) {
+      final first = g.roms.firstOrNull;
+      if (first == null || claimants.containsKey(_key(g, first))) continue;
+      final claim = g.raDumps.map((sha1) => unlisted[sha1]).nonNulls.firstOrNull;
+      if (claim == null) continue;
+      claimants[_key(g, first)] = [claim];
+      unknown.remove(claim.file);
     }
 
     final libraryIndex = library.build();
