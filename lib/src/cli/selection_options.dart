@@ -88,12 +88,13 @@ extension SelectionFlags on ArgParser {
         'ra':
             'Rank titles that carry achievements first, a hash-verified dump '
             'ahead of one only matched by name.',
+        'multilang': 'Rank by how many languages the dump carries, most first.',
       },
       help:
           'Which tie-breaks decide a clone group, best first. region keeps a '
           'fixed place below the others even when left out, so naming it only '
-          'lifts it above the axes you did list; lang and ra left out play no '
-          'part at all.',
+          'lifts it above the axes you did list; lang, multilang and ra left '
+          'out play no part at all.',
     );
     addOption(
       'wishlist',

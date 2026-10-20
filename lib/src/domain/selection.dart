@@ -762,9 +762,9 @@ final class EditionTags {
 
 /// The tie-breaks whose precedence the caller chooses.
 ///
-/// [lang] and [ra] play no part when left out. [region] keeps a fixed position
-/// instead — see [GameScore] — so naming it only moves it up.
-enum ScoreAxis { lang, region, ra }
+/// [lang], [multilang] and [ra] play no part when left out. [region] keeps a
+/// fixed position instead — see [GameScore] — so naming it only moves it up.
+enum ScoreAxis { lang, region, ra, multilang }
 
 /// User-tunable inputs to the 1G1R scorer.
 ///
@@ -852,6 +852,7 @@ final class GameScore implements Comparable<GameScore> {
     required this.regionRank,
     required this.retroAchievements,
     required this.revision,
+    this.languageCount = 0,
     this.representationRank = 1,
     this.representationFirst = false,
     this.modernRank = 0,
@@ -864,6 +865,7 @@ final class GameScore implements Comparable<GameScore> {
   final int cloneListPriority;
   final ProductionStatus status;
   final int languageRank;
+  final int languageCount;
   final int regionRank;
 
   /// Forced to [RaMatch.none] when the caller left `ra` out of [axes], so the
@@ -927,6 +929,7 @@ final class GameScore implements Comparable<GameScore> {
   int _onAxis(ScoreAxis axis, GameScore other) => switch (axis) {
     ScoreAxis.lang => languageRank.compareTo(other.languageRank),
     ScoreAxis.region => regionRank.compareTo(other.regionRank),
+    ScoreAxis.multilang => other.languageCount.compareTo(languageCount),
     // Graded, so two clones that both carry achievements resolve here rather
     // than at the fail-safe: a hash join proves the set runs on these bytes, a
     // name join only suggests it.
@@ -956,6 +959,7 @@ final class ScoringEngine {
           candidate.cloneListPriority ?? GameCandidate.defaultCloneListPriority,
       status: g.metadata.status,
       languageRank: config.languages.rank(g.metadata.languages),
+      languageCount: g.metadata.languages.length,
       regionRank: config.regions.rank(g.metadata.regions),
       modernRank: editions.modernRank(g.name),
       budgetRank: editions.budgetRank(g.name),

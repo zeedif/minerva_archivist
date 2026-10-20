@@ -1870,6 +1870,49 @@ void main() {
       expect(select(const [ScoreAxis.region]), ['Metal Gear (Europe)']);
     });
 
+    test('multilang takes the dump with the most languages, then region', () {
+      final dumps = [
+        _game('Tour (USA)', langs: const ['En', 'Es'], regions: const ['USA']),
+        _game(
+          'Tour (Europe)',
+          langs: const ['En', 'Fr', 'De', 'Es'],
+          regions: const ['Europe'],
+        ),
+        _game(
+          'Tour (Japan)',
+          langs: const ['En', 'Fr', 'De', 'It', 'Ja'],
+          regions: const ['Japan'],
+        ),
+      ];
+      String winner(List<DatGame> games, List<ScoreAxis> priority) =>
+          const GameSelector()
+              .select(
+                dat: _dat(games),
+                config: config,
+                scoring: ScoringConfig(
+                  languagePriority: const ['Es', 'En'],
+                  regionPriority: config.defaultRegionOrder,
+                  priority: priority,
+                ),
+              )
+              .games
+              .single
+              .name;
+      const axes = [ScoreAxis.lang, ScoreAxis.multilang];
+      // Japan carries the most languages but not the preferred one.
+      expect(winner(dumps, axes), 'Tour (Europe)');
+      expect(winner(dumps, const [ScoreAxis.lang]), 'Tour (USA)');
+      final tied = [
+        dumps[0],
+        _game(
+          'Tour (Europe)',
+          langs: const ['En', 'Es'],
+          regions: const ['Europe'],
+        ),
+      ];
+      expect(winner(tied, axes), 'Tour (USA)');
+    });
+
     test('achievements outrank the (Alt) and revision tie-breaks', () {
       final dumps = [
         _game('Balance (Japan)', regions: const ['Japan'], revision: 1),
