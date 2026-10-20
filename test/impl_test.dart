@@ -171,6 +171,30 @@ void main() {
       expect(report.unknownFiles, isEmpty, reason: 'must not be pruned');
     });
 
+    test('a document extension still counts when the ROMs carry it', () async {
+      File('${tmp.path}/Sonic (USA).md').writeAsStringSync('hello');
+      final dat = DatFile(
+        header: const DatHeader(name: 'T', flavor: DatFlavor.noIntro),
+        games: const [
+          DatGame(
+            name: 'Sonic (USA)',
+            roms: [
+              RomEntry(
+                name: 'Sonic (USA).md',
+                size: 5,
+                format: RomFormat.cartridge,
+                sha1: 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d',
+              ),
+            ],
+            metadata: GameMetadata(),
+          ),
+        ],
+      );
+      final report = await const RomAuditor().audit(dat: dat, romRoot: tmp);
+      expect(report.present.single.game.name, 'Sonic (USA)');
+      expect(report.unknownFiles, isEmpty);
+    });
+
     test('audit ignores the .trash quarantine', () async {
       final trash = Directory('${tmp.path}/$trashFolderName')
         ..createSync(recursive: true);

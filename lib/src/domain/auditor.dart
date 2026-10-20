@@ -167,6 +167,11 @@ final class RomAuditor {
       ],
     ];
 
+    // An extension a ROM carries is never a document: Mega Drive dumps are `.md`.
+    final ignored = _ignoreExtensions.difference({
+      for (final e in indexRoms) p.extension(e.rom.name).toLowerCase(),
+    });
+
     // Keys claimed by the audited set, so a file matching only the wider catalog
     // still counts as unknown and stays prunable.
     final selectedKeys = <String>{
@@ -225,7 +230,7 @@ final class RomAuditor {
         // report a pruned game as present and stop it being re-downloaded.
         if (p.split(sf.relativePath).first == trashFolderName) continue;
         final ext = p.extension(sf.file.path).toLowerCase();
-        if (_ignoreExtensions.contains(ext)) {
+        if (ignored.contains(ext)) {
           // Not worth hashing, but it still tells us whether a folder is curated.
           library.add(sf.file, sf.relativePath, null);
           continue;
