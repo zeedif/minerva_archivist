@@ -107,7 +107,7 @@ Each stage reports what it dropped and why:
 
 | Command | What it does |
 |---|---|
-| `sync` | Mirror clonelists / metadata / RetroAchievements / MIA locally |
+| `sync` | Mirror clonelists / metadata / RetroAchievements / MIA and Redump / MAME-Redump DATs locally |
 | `filter` | Show the 1G1R selection — offline, read-only |
 | `audit` | Compare the selection against what's on disk |
 | `download` | Fetch missing games from the platform torrent |

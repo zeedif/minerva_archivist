@@ -13,6 +13,7 @@ export 'src/models/metadata.dart';
 export 'src/data/archive_source.dart';
 export 'src/data/aria2_client.dart';
 export 'src/data/chd_header.dart';
+export 'src/data/dat_mirror.dart';
 export 'src/data/dat_loader.dart';
 export 'src/data/file_scanner.dart';
 export 'src/data/metadata_repository.dart';

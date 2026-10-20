@@ -110,7 +110,7 @@ Cada etapa informa qué descartó y por qué:
 
 | Comando | Qué hace |
 |---|---|
-| `sync` | Espeja clonelists / metadatos / RetroAchievements / MIA en local |
+| `sync` | Espeja clonelists / metadatos / RetroAchievements / MIA y DATs de Redump / MAME-Redump en local |
 | `filter` | Muestra la selección 1G1R — sin conexión, solo lectura |
 | `audit` | Compara la selección con lo que hay en disco |
 | `download` | Baja los juegos que faltan desde el torrent de la plataforma |

@@ -251,23 +251,33 @@ herramienta persiga archivos que nadie tiene.
 
 ### `sync`
 
-Espeja en local los clonelists, metadatos, RetroAchievements y datos MIA.
-Repítelo cuando quieras; solo se bajan los archivos cuyo hash cambió.
+Espeja en local los clonelists, metadatos, RetroAchievements y datos MIA, y
+mantiene al día los DATs de Redump y MAME-Redump. Repítelo cuando quieras; solo
+se baja lo que cambió.
 
 ```sh
 minerva_archivist sync
 minerva_archivist sync --force
 minerva_archivist sync --only clonelists --only retroAchievements
+minerva_archivist sync --only redump --only mameRedump --system "Sega - Saturn"
 ```
 
-`--only` acepta `config`, `cloneLists`, `metadata`, `retroAchievements`, `mias`.
+`--only` acepta `config`, `cloneLists`, `metadata`, `retroAchievements`, `mias`,
+`redump`, `mameRedump`.
+
+Los DATs se espejan para los sistemas que ya estén en `redump/` y `mame-redump/`,
+más cada `--system` que nombres (como lo escribe el DAT: `Sony - PlayStation 2`).
+Un DAT se guarda como `<sistema>.dat`, así que la ruta que pasas a `-d` sobrevive
+a cada actualización, y las copias anteriores de ese sistema se eliminan.
+No-Intro no tiene descarga directa, así que sus DATs siguen siendo manuales.
 
 Todo queda bajo `.minerva-cache/`:
 
 ```
 .minerva-cache/
 ├── clonelists/  metadata/  mias/  retroachievements/  config/
-└── <tus carpetas de DATs>
+├── redump/  mame-redump/
+└── <tus otras carpetas de DATs>
 ```
 
 ### `filter`

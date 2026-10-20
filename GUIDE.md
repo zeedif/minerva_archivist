@@ -242,23 +242,33 @@ files nobody has.
 
 ### `sync`
 
-Mirrors clonelists, metadata, RetroAchievements and MIA data locally. Re-run
-whenever; only files whose hash changed are fetched.
+Mirrors clonelists, metadata, RetroAchievements and MIA data locally, and keeps
+Redump and MAME-Redump DATs current. Re-run whenever; only what changed is
+fetched.
 
 ```sh
 minerva_archivist sync
 minerva_archivist sync --force
 minerva_archivist sync --only clonelists --only retroAchievements
+minerva_archivist sync --only redump --only mameRedump --system "Sega - Saturn"
 ```
 
-`--only` accepts `config`, `cloneLists`, `metadata`, `retroAchievements`, `mias`.
+`--only` accepts `config`, `cloneLists`, `metadata`, `retroAchievements`, `mias`,
+`redump`, `mameRedump`.
+
+The DATs are mirrored for the systems already in `redump/` and `mame-redump/`,
+plus each `--system` you name (as the DAT does: `Sony - PlayStation 2`). A DAT is
+saved as `<system>.dat`, so the path you give `-d` survives every update, and
+older copies of that system are removed. No-Intro has no direct download, so its
+DATs stay manual.
 
 Everything lands under `.minerva-cache/`:
 
 ```
 .minerva-cache/
 ├── clonelists/  metadata/  mias/  retroachievements/  config/
-└── <your DAT folders>
+├── redump/  mame-redump/
+└── <your other DAT folders>
 ```
 
 ### `filter`
