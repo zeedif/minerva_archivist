@@ -95,7 +95,8 @@ language can cost you the dump that carries achievements, and the reverse.
 | `lang,ra` | Language first, then achievements; region stops outranking either |
 | `lang,ra,multilang` | As above, then the dump with the most languages; region only settles a tie |
 
-`multilang` counts every language a dump carries, so a European dump with Spanish,
+`multilang` counts every language a dump carries, once however many variants of it
+there are (`Zh-Hant` and `Zh-Hans` are one), so a European dump with Spanish,
 French and German beats a USA one with Spanish and English.
 
 `lang`, `multilang` and `ra` left out drop from the ranking entirely. **`region` does not**: it

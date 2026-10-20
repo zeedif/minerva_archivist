@@ -959,7 +959,7 @@ final class ScoringEngine {
           candidate.cloneListPriority ?? GameCandidate.defaultCloneListPriority,
       status: g.metadata.status,
       languageRank: config.languages.rank(g.metadata.languages),
-      languageCount: g.metadata.languages.length,
+      languageCount: {for (final l in g.metadata.languages) l.split('-').first}.length,
       regionRank: config.regions.rank(g.metadata.regions),
       modernRank: editions.modernRank(g.name),
       budgetRank: editions.budgetRank(g.name),

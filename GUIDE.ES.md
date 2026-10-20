@@ -96,7 +96,8 @@ mejor primero.
 | `lang,ra` | Idioma primero, luego logros; la región deja de superar a ninguno |
 | `lang,ra,multilang` | Lo anterior y después el volcado con más idiomas; la región solo desempata |
 
-`multilang` cuenta todos los idiomas que lleva un volcado, así que uno europeo con
+`multilang` cuenta todos los idiomas que lleva un volcado, una sola vez aunque tenga
+variantes (`Zh-Hant` y `Zh-Hans` son uno), así que uno europeo con
 español, francés y alemán gana a uno USA con español e inglés.
 
 Dejar fuera `lang`, `multilang` o `ra` los saca del orden por completo. **`region` no**:

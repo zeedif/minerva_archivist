@@ -1911,6 +1911,20 @@ void main() {
         ),
       ];
       expect(winner(tied, axes), 'Tour (USA)');
+      // Script variants of one language are one language.
+      final variants = [
+        _game(
+          'Tour (USA)',
+          langs: const ['En', 'Ko', 'Zh'],
+          regions: const ['USA'],
+        ),
+        _game(
+          'Tour (Europe)',
+          langs: const ['En', 'Ko', 'Zh-Hant', 'Zh-Hans'],
+          regions: const ['Europe'],
+        ),
+      ];
+      expect(winner(variants, axes), 'Tour (USA)');
     });
 
     test('achievements outrank the (Alt) and revision tie-breaks', () {
