@@ -72,6 +72,8 @@ final class Aria2TorrentClient implements TorrentClient {
         '--rpc-listen-all=false',
         '--rpc-listen-port=$port',
         '--rpc-secret=$secret',
+        // Platform torrents (3DS, PS2...) go base64-encoded, past the 2M default.
+        '--rpc-max-request-size=64M',
         '--continue=true',
         '--bt-save-metadata=true',
         '--quiet=true',
