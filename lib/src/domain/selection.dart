@@ -762,9 +762,9 @@ final class EditionTags {
 
 /// The tie-breaks whose precedence the caller chooses.
 ///
-/// [lang], [multilang] and [ra] play no part when left out. [region] keeps a
+/// [lang], [multilang], [fewlang] and [ra] play no part when left out. [region] keeps a
 /// fixed position instead — see [GameScore] — so naming it only moves it up.
-enum ScoreAxis { lang, region, ra, multilang }
+enum ScoreAxis { lang, region, ra, multilang, fewlang }
 
 /// User-tunable inputs to the 1G1R scorer.
 ///
@@ -930,6 +930,7 @@ final class GameScore implements Comparable<GameScore> {
     ScoreAxis.lang => languageRank.compareTo(other.languageRank),
     ScoreAxis.region => regionRank.compareTo(other.regionRank),
     ScoreAxis.multilang => other.languageCount.compareTo(languageCount),
+    ScoreAxis.fewlang => languageCount.compareTo(other.languageCount),
     // Graded, so two clones that both carry achievements resolve here rather
     // than at the fail-safe: a hash join proves the set runs on these bytes, a
     // name join only suggests it.

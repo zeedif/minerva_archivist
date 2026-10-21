@@ -95,12 +95,13 @@ mejor primero.
 | `ra,lang` | Gana el volcado con logros, aunque esté en otro idioma |
 | `lang,ra` | Idioma primero, luego logros; la región deja de superar a ninguno |
 | `lang,ra,multilang` | Lo anterior y después el volcado con más idiomas; la región solo desempata |
+| `lang,ra,fewlang` | Lo anterior y después el volcado con menos idiomas, para plataformas donde cada idioma extra pesa (discos de PS3) |
 
 `multilang` cuenta todos los idiomas que lleva un volcado, una sola vez aunque tenga
 variantes (`Zh-Hant` y `Zh-Hans` son uno), así que uno europeo con
 español, francés y alemán gana a uno USA con español e inglés.
 
-Dejar fuera `lang`, `multilang` o `ra` los saca del orden por completo. **`region` no**:
+`fewlang` cuenta igual pero ordena al revés. Dejar fuera `lang`, `multilang`, `fewlang` o `ra` los saca del orden por completo. **`region` no**:
 conserva un puesto fijo por debajo de lo que sí listaste, porque nada más en la
 cadena puede decidir entre dos regiones y un empate entre regiones acabaría
 resuelto por la ortografía. Omitirla significa que no debe superar a tu idioma ni

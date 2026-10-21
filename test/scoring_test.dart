@@ -1927,6 +1927,33 @@ void main() {
       expect(winner(variants, axes), 'Tour (USA)');
     });
 
+    test('fewlang takes the dump with the fewest languages, after lang', () {
+      final dumps = [
+        _game(
+          'Tour (Europe)',
+          langs: const ['En', 'Fr', 'De', 'Es'],
+          regions: const ['Europe'],
+        ),
+        _game('Tour (USA)', langs: const ['En', 'Es'], regions: const ['USA']),
+        _game('Tour (Japan)', langs: const ['En', 'Ja'], regions: const ['Japan']),
+      ];
+      final winner = const GameSelector()
+          .select(
+            dat: _dat(dumps),
+            config: config,
+            scoring: ScoringConfig(
+              languagePriority: const ['Es', 'En'],
+              regionPriority: config.defaultRegionOrder,
+              priority: const [ScoreAxis.lang, ScoreAxis.fewlang],
+            ),
+          )
+          .games
+          .single
+          .name;
+      // Japan is lighter but speaks nothing preferred first; lang still decides.
+      expect(winner, 'Tour (USA)');
+    });
+
     test('achievements outrank the (Alt) and revision tie-breaks', () {
       final dumps = [
         _game('Balance (Japan)', regions: const ['Japan'], revision: 1),
