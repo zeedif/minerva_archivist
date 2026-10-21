@@ -375,6 +375,10 @@ minerva_archivist download --collection No-Intro --platform "<plataforma>" --ari
 | `--seed` | Sigue compartiendo al terminar |
 | `--dry-run` | Muestra el plan sin transferir nada |
 
+Los DAT de Vita (`PSVgameSD`, `NoNpDrm`, `BlackFinPSV`, `VPK`) se buscan como
+`Unofficial - Sony - PlayStation Vita (...)`, el nombre que les dan MiNERVA y Retool,
+aunque la cabecera del DAT no lo diga.
+
 Los juegos que el archivo no distribuye se listan uno por uno, así que un faltante
 nunca pasa desapercibido:
 

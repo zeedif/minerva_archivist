@@ -23,6 +23,21 @@ void main() {
       );
     });
 
+    test('files the Vita DATs where MiNERVA and Retool do', () {
+      expect(
+        r.baseSystem('Sony - PlayStation Vita (PSVgameSD) (20260924-144902)'),
+        'Unofficial - Sony - PlayStation Vita (PSVgameSD)',
+      );
+      expect(
+        r.baseSystem('Unofficial - Sony - PlayStation Vita (NoNpDrm) (20260719)'),
+        'Unofficial - Sony - PlayStation Vita (NoNpDrm)',
+      );
+      expect(
+        r.baseSystem('Sony - PlayStation Vita (PSN) (Content)'),
+        'Sony - PlayStation Vita (PSN) (Content)',
+      );
+    });
+
     test('keeps a multi-qualifier platform', () {
       expect(
         r.baseSystem('IBM - PC and Compatibles (Digital) (Misc) (Parent-Clone)'),

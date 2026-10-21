@@ -99,7 +99,13 @@ final class SystemNameResolver {
       previous = name;
       name = name.replaceFirst(trailing, '').trimRight();
     } while (name != previous);
-    return name.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
+    name = name.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
+    // MiNERVA and Retool file the Vita dumps as "Unofficial - ...", which
+    // No-Intro's own DAT of them no longer says.
+    final vita = RegExp(
+      r'^Sony - PlayStation Vita \((?:BlackFinPSV|NoNpDrm|PSVgameSD|VPK)\)$',
+    );
+    return vita.hasMatch(name) ? 'Unofficial - $name' : name;
   }
 
   /// The system name Retool files its assets under: [baseSystem] with every
