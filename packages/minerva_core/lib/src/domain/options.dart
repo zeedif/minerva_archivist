@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../models/dat.dart';
+import 'jsonc.dart';
 import 'organize.dart';
 import 'selection.dart';
 
@@ -45,7 +46,9 @@ final class RunOptions {
     }
     String? path(String key) => switch (json[key]) {
       null => null,
-      final String value => baseDir == null ? value : p.join(baseDir, value),
+      final String value => p.normalize(
+        baseDir == null ? value : p.join(baseDir, value),
+      ),
       _ => throw FormatException('"$key" must be a path.'),
     };
     final priority = _enums(json, 'priority', ScoreAxis.values, (a) => a.name);
@@ -96,6 +99,26 @@ final class RunOptions {
       },
     );
   }
+
+  /// A complete snapshot suitable for saving a profile.
+  Map<String, Object?> toJson() => {
+    'dat': dats,
+    'root': root,
+    'lang': languages,
+    'region': regions,
+    'priority': priority.map((v) => v.name).toList(),
+    'langcount': langCount?.name,
+    'wishlist': wishlist,
+    'wishlist-mode': wishlistMode.name,
+    'achievements': achievements?.name,
+    'supersets': supersets.name,
+    'compilations': compilations.name,
+    'exclude': exclude.map((v) => v.cli).toList(),
+    'layout': layout.cli,
+    'protect': protect.toList(),
+    'skip': skip.map((v) => v.name).toList(),
+    'depth': depth,
+  };
 
   /// The option names [RunOptions.fromJson] accepts.
   static const keys = {
@@ -178,36 +201,46 @@ final class RunOptions {
 
 /// Named option sets read from a JSON/JSONC file shaped
 /// `{"defaults": {...}, "profiles": {"<name>": {...}}}`.
+///
+/// Saving rewrites only the entry it touches, so comments and the layout of
+/// the rest of the file survive.
 final class Profiles {
-  const Profiles._(this._defaults, this._profiles, this._baseDir);
+  Profiles._(this.file);
 
   /// Throws [FormatException] when [file] is not shaped as documented.
-  static Future<Profiles> load(File file) async {
-    final decoded = jsonDecode(stripJsonComments(await file.readAsString()));
-    if (decoded case {'profiles': final Map<String, Object?> profiles}) {
-      return Profiles._(
-        switch (decoded['defaults']) {
-          final Map<String, Object?> defaults => defaults,
-          null => const {},
-          _ => throw const FormatException('"defaults" must be an object.'),
-        },
-        {
-          for (final MapEntry(:key, :value) in profiles.entries)
-            key: value is Map<String, Object?>
-                ? value
-                : throw FormatException('Profile "$key" must be an object.'),
-        },
-        p.dirname(p.absolute(file.path)),
-      );
-    }
-    throw const FormatException('A profiles file needs a "profiles" object.');
-  }
+  static Future<Profiles> load(File file) async =>
+      Profiles._(file).._read(await file.readAsString());
 
-  final Map<String, Object?> _defaults;
-  final Map<String, Map<String, Object?>> _profiles;
-  final String _baseDir;
+  /// An empty store; the file is created on the first save.
+  factory Profiles.empty(File file) => Profiles._(file);
+
+  final File file;
+  Map<String, Object?> _defaults = const {};
+  Map<String, Map<String, Object?>> _profiles = const {};
+
+  String get _baseDir => p.dirname(p.absolute(file.path));
 
   Iterable<String> get names => _profiles.keys;
+
+  /// What a new profile starts from.
+  ///
+  /// Throws [FormatException] when `defaults` is not valid on its own.
+  RunOptions get defaults => RunOptions.fromJson(_defaults, baseDir: _baseDir);
+
+  /// Stores [options] as [name], writing only what differs from `defaults`.
+  ///
+  /// The file is read again first, so edits made to it since [load] are kept.
+  Future<void> save(String name, RunOptions options) async {
+    final key = name.trim();
+    if (key.isEmpty) throw const FormatException('Enter a profile name.');
+    await _edit(
+      (source, profiles) =>
+          jsoncPut(source, profiles, key, _object(_entry(key, options))),
+    );
+  }
+
+  Future<void> delete(String name) =>
+      _edit((source, profiles) => jsoncRemove(source, profiles, name));
 
   /// The options of [name]: defaults, then the profile, then [overrides].
   ///
@@ -232,4 +265,102 @@ final class Profiles {
     };
     return RunOptions.fromJson(absolute);
   }
+
+  void _read(String source) {
+    final decoded = jsonDecode(stripJsonComments(source));
+    if (decoded case {'profiles': final Map<String, Object?> profiles}) {
+      final defaults = switch (decoded['defaults']) {
+        final Map<String, Object?> defaults => defaults,
+        null => const <String, Object?>{},
+        _ => throw const FormatException('"defaults" must be an object.'),
+      };
+      _profiles = {
+        for (final MapEntry(:key, :value) in profiles.entries)
+          key: value is Map<String, Object?>
+              ? value
+              : throw FormatException('Profile "$key" must be an object.'),
+      };
+      _defaults = defaults;
+      return;
+    }
+    throw const FormatException('A profiles file needs a "profiles" object.');
+  }
+
+  Future<void> _edit(
+    String Function(String source, JsoncObject profiles) change,
+  ) async {
+    final source = await file.exists()
+        ? await file.readAsString()
+        : '{\n  "profiles": {}\n}\n';
+    _read(source);
+    final profiles =
+        jsoncObjectAt(source, ['profiles']) ??
+        (throw const FormatException('"profiles" must be an object.'));
+    final updated = change(source, profiles);
+    _read(updated);
+    await file.parent.create(recursive: true);
+    final temporary = File('${file.path}.tmp');
+    await temporary.writeAsString(updated, flush: true);
+    await temporary.rename(file.path);
+  }
+
+  /// The encoded members of [name]'s entry. A value the stored entry already
+  /// means keeps its spelling; one `defaults` already gives is left out.
+  Map<String, String> _entry(String name, RunOptions options) {
+    final stored = _profiles[name] ?? const {};
+    final inherited = {...const RunOptions(dats: []).toJson(), ..._defaults};
+    final wanted = options.toJson();
+    return {
+      for (final key in {...stored.keys, ...RunOptions.keys})
+        if (stored.containsKey(key) && _same(key, wanted[key], stored[key]))
+          key: _value(stored[key])
+        else if (!_same(key, wanted[key], inherited[key]))
+          key: _value(_spell(key, wanted[key])),
+    };
+  }
+
+  bool _same(String key, Object? a, Object? b) =>
+      jsonEncode(_canonical(key, a)) == jsonEncode(_canonical(key, b));
+
+  Object? _canonical(String key, Object? value) => switch ((key, value)) {
+    ('root' || 'wishlist', final String path) => p.canonicalize(
+      p.join(_baseDir, path),
+    ),
+    ('depth', final String text) => int.tryParse(text) ?? text,
+    (_, final String text) when _lists.contains(key) => [text],
+    (_, final List<Object?> list) when _sets.contains(key) =>
+      list.map((v) => '$v').toList()..sort(),
+    _ => value,
+  };
+
+  /// Paths inside the profiles folder are written relative to it, and every
+  /// path with forward slashes; a single DAT is written as a plain string.
+  Object? _spell(String key, Object? value) => switch ((key, value)) {
+    ('root' || 'wishlist', final String path) => _slashes(
+      p.isWithin(_baseDir, path) ? p.relative(path, from: _baseDir) : path,
+    ),
+    ('dat', [final String only]) => only,
+    _ => value,
+  };
+
+  static String _slashes(String path) =>
+      Platform.isWindows ? path.replaceAll(r'\', '/') : path;
+
+  static String _value(Object? value) => switch (value) {
+    final List<Object?> list => '[${list.map(jsonEncode).join(', ')}]',
+    _ => jsonEncode(value),
+  };
+
+  static String _object(Map<String, String> members) {
+    final pairs = [
+      for (final MapEntry(:key, :value) in members.entries)
+        '${jsonEncode(key)}: $value',
+    ];
+    return '{${pairs.join(', ')}}';
+  }
+
+  static const _lists = {
+    'dat', 'lang', 'region', 'priority', 'exclude', 'protect', 'skip', //
+  };
+  static const _sets = {'exclude', 'protect', 'skip'};
 }

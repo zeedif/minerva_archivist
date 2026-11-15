@@ -80,7 +80,7 @@ minerva run gb psx --apply  # ejecuta algunos
 minerva run --all           # vista previa de todos
 ```
 
-Un perfil pisa `defaults` y la línea de comandos pisa a ambos. Las rutas relativas se resuelven desde el archivo. Mira [examples/profiles.jsonc](examples/profiles.jsonc). La aplicación de escritorio lee el mismo archivo.
+Un perfil pisa `defaults` y la línea de comandos pisa a ambos. Las rutas relativas se resuelven desde el archivo. Mira [examples/profiles.jsonc](examples/profiles.jsonc). La aplicación de escritorio edita el mismo archivo. Los perfiles funcionan como preajustes: escribes un nombre y Guardar almacena ahí los ajustes actuales, Cargar reemplaza los ajustes por los de un perfil guardado, y el campo del nombre sugiere los perfiles guardados mientras escribes. Los ajustes ofrecen solo los valores que acepta cada opción (DATs, idiomas y regiones presentes en la caché, layouts, exclusiones), y la prioridad, los idiomas y las regiones se ordenan arrastrando. Guardar reescribe solo el perfil guardado, conserva los comentarios y el resto del archivo tal cual, y omite lo que ya da `defaults`. Si falta el archivo de perfiles, se crea al guardar el primero. La aplicación recuerda la última carpeta de caché que cargó; en el primer arranque usa su argumento o la `.minerva-cache` más cercana por encima del directorio de trabajo. El panel de salida es texto de solo lectura que se puede seleccionar y copiar; se acopla a la izquierda, a la derecha o abajo, flota dentro de la ventana o se oculta con F12.
 
 ## Licencia
 

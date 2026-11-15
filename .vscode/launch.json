@@ -1,0 +1,41 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "MiNERVA Archivist (Flutter)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}/apps/desktop",
+      "program": "${workspaceFolder}/apps/desktop/lib/main.dart",
+      "deviceId": "windows",
+      "args": ["${workspaceFolder}/.minerva-cache"]
+    },
+    {
+      "name": "cli",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/apps/cli/bin/minerva.dart"
+    },
+    {
+      "name": "desktop (profile mode)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}/apps/desktop",
+      "program": "${workspaceFolder}/apps/desktop/lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "profile",
+      "args": ["${workspaceFolder}/.minerva-cache"]
+    },
+    {
+      "name": "desktop (release mode)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}/apps/desktop",
+      "program": "${workspaceFolder}/apps/desktop/lib/main.dart",
+      "deviceId": "windows",
+      "flutterMode": "release",
+      "args": ["${workspaceFolder}/.minerva-cache"]
+    }
+  ]
+}

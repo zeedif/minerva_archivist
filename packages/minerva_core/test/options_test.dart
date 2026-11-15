@@ -75,6 +75,156 @@ void main() {
 
     tearDown(() => dir.delete(recursive: true));
 
+    test(
+      'creates a store and preserves every setting through save and reload',
+      () async {
+        final file = File(p.join(dir.path, 'new', 'profiles.jsonc'));
+        final profiles = Profiles.empty(file);
+        expect(await file.exists(), isFalse);
+        final options = RunOptions.fromJson({
+          'dat': ['Nintendo - Game Boy', 'Sony - PlayStation'],
+          'root': p.join(dir.path, 'roms'),
+          'wishlist': p.join(dir.path, 'wishlist.jsonc'),
+          'lang': ['Es', 'En'],
+          'region': ['Europe'],
+          'priority': ['lang', 'langcount'],
+          'langcount': 'fewest',
+          'wishlist-mode': 'subset',
+          'achievements': 'approved',
+          'supersets': 'ignore',
+          'compilations': 'never',
+          'exclude': ['demos'],
+          'layout': 'extracted-in-folder',
+          'protect': ['Favorites'],
+          'skip': ['prune'],
+          'depth': 2,
+        });
+        await profiles.save(' My collection ', options);
+        var loaded = await Profiles.load(file);
+        expect(loaded.names, ['My collection']);
+        expect(loaded.resolve('My collection').toJson(), options.toJson());
+        await loaded.save('Other', const RunOptions(dats: ['Other']));
+        await loaded.save('My collection', const RunOptions(dats: ['Updated']));
+        loaded = await Profiles.load(file);
+        expect(loaded.resolve('My collection').dats, ['Updated']);
+        await loaded.delete('Other');
+        expect((await Profiles.load(file)).names, ['My collection']);
+      },
+    );
+
+    test(
+      'saving a legacy profile keeps defaults and neighboring profiles',
+      () async {
+        final file = File(p.join(dir.path, 'profiles.jsonc'));
+        final profiles = await Profiles.load(file);
+        final before = profiles.resolve('gb').toJson();
+        await profiles.save('New', const RunOptions(dats: ['New']));
+        final loaded = await Profiles.load(file);
+        expect(loaded.resolve('gb').toJson(), before);
+        expect(loaded.resolve('New').languages, ['En']);
+        expect(loaded.resolve('New').layout, Layout.zip);
+      },
+    );
+
+    test('saving keeps comments and untouched entries byte for byte', () async {
+      final file = File(p.join(dir.path, 'profiles.jsonc'));
+      await file.writeAsString(
+        '{\r\n'
+        '  "defaults": {"lang": ["Es", "En"], "layout": "extracted"},\r\n'
+        '  "profiles": {\r\n'
+        '    // HANDHELDS\r\n'
+        '    "gb": {"dat": "Nintendo - Game Boy", "root": "Z:/Roms/gb"},\r\n'
+        '    // "gbc": {"dat": "Nintendo - Game Boy Color"}\r\n'
+        '    "gba": {"dat": "Nintendo - Game Boy Advance", "layout": "zip"}\r\n'
+        '  }\r\n'
+        '}\r\n',
+      );
+      final profiles = await Profiles.load(file);
+      final gba = profiles.resolve('gba');
+      await profiles.save(
+        'gba',
+        RunOptions.fromJson({...gba.toJson(), 'depth': 1}),
+      );
+      await profiles.save(
+        'nds',
+        RunOptions.fromJson({
+          ...profiles.defaults.toJson(),
+          'dat': ['Nintendo - Nintendo DS'],
+          'root': p.join(dir.path, 'roms', 'nds'),
+        }),
+      );
+      expect(
+        await file.readAsString(),
+        '{\r\n'
+        '  "defaults": {"lang": ["Es", "En"], "layout": "extracted"},\r\n'
+        '  "profiles": {\r\n'
+        '    // HANDHELDS\r\n'
+        '    "gb": {"dat": "Nintendo - Game Boy", "root": "Z:/Roms/gb"},\r\n'
+        '    // "gbc": {"dat": "Nintendo - Game Boy Color"}\r\n'
+        '    "gba": {"dat": "Nintendo - Game Boy Advance", "layout": "zip", "depth": 1},\r\n'
+        '    "nds": {"dat": "Nintendo - Nintendo DS", "root": "roms/nds"}\r\n'
+        '  }\r\n'
+        '}\r\n',
+      );
+      await profiles.delete('nds');
+      await profiles.delete('gb');
+      expect(
+        await file.readAsString(),
+        '{\r\n'
+        '  "defaults": {"lang": ["Es", "En"], "layout": "extracted"},\r\n'
+        '  "profiles": {\r\n'
+        '    // HANDHELDS\r\n'
+        '    // "gbc": {"dat": "Nintendo - Game Boy Color"}\r\n'
+        '    "gba": {"dat": "Nintendo - Game Boy Advance", "layout": "zip", "depth": 1}\r\n'
+        '  }\r\n'
+        '}\r\n',
+      );
+    });
+
+    test('writes a null that clears an inherited langcount', () async {
+      final file = File(p.join(dir.path, 'profiles.jsonc'));
+      await file.writeAsString(
+        '{"defaults": {"priority": ["lang", "langcount"], "langcount": "most"},'
+        ' "profiles": {}}',
+      );
+      final profiles = await Profiles.load(file);
+      await profiles.save(
+        'plain',
+        RunOptions.fromJson({
+          'dat': 'X',
+          'priority': ['lang'],
+        }),
+      );
+      expect(
+        await file.readAsString(),
+        contains(
+          '"plain": {"dat": "X", "priority": ["lang"], "langcount": null}',
+        ),
+      );
+      expect((await Profiles.load(file)).resolve('plain').langCount, isNull);
+    });
+
+    test('keeps edits made to the file after it was loaded', () async {
+      final file = File(p.join(dir.path, 'profiles.jsonc'));
+      final profiles = await Profiles.load(file);
+      await file.writeAsString(
+        (await file.readAsString()).replaceFirst('// shared', '// edited'),
+      );
+      await profiles.save('New', const RunOptions(dats: ['New']));
+      expect(await file.readAsString(), contains('// edited'));
+    });
+
+    test('never overwrites a file it cannot parse', () async {
+      final file = File(p.join(dir.path, 'profiles.jsonc'));
+      final profiles = await Profiles.load(file);
+      await file.writeAsString('{broken');
+      await expectLater(
+        profiles.save('New', const RunOptions(dats: ['New'])),
+        throwsFormatException,
+      );
+      expect(await file.readAsString(), '{broken');
+    });
+
     test('layer defaults, the profile and overrides', () async {
       final profiles = await Profiles.load(
         File(p.join(dir.path, 'profiles.jsonc')),
@@ -136,6 +286,14 @@ void main() {
       );
       expect(await names('Sony - PlayStation Vita (PSVgameSD)'), hasLength(1));
     });
+    test('lists every cached system once per source', () async {
+      expect(await cachedDatReferences(cache.path), [
+        'mame-redump:Sega - Saturn',
+        'nointro:Sega - 32X',
+        'redump:Sega - Saturn',
+      ]);
+    });
+
     test('accepts a path and fails on an unknown system', () async {
       final path = p.join(cache.path, 'redump', 'Sega - Saturn.dat');
       expect((await locateDats(path, cache.path)).single.path, path);

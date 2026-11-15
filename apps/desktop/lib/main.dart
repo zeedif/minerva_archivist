@@ -1,309 +1,537 @@
-import 'package:flutter/material.dart';
-import 'package:minerva_core/minerva_core.dart';
+import 'dart:async';
+import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
+
+import 'controls.dart';
+import 'profile_form.dart';
 import 'run_controller.dart';
+import 'output.dart';
+import 'settings.dart';
 
-void main(List<String> args) {
-  final controller = RunController(args.firstOrNull ?? '.minerva-cache')
-    ..load();
-  runApp(MinervaApp(controller: controller));
+/// Opens the last cache folder used; [args] or the nearest `.minerva-cache`
+/// only seed the first launch.
+Future<void> main(List<String> args) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final settings = await AppSettings.standard();
+  final cacheDir =
+      await settings.cacheDir() ??
+      args.firstOrNull ??
+      findCacheDir(Directory.current.path);
+  final controller = RunController(cacheDir, settings: settings);
+  final layout = OutputLayout(settings: settings);
+  await layout.restore();
+  unawaited(controller.load());
+  runApp(MinervaApp(controller: controller, layout: layout));
 }
 
 class MinervaApp extends StatelessWidget {
-  const MinervaApp({super.key, required this.controller});
+  MinervaApp({super.key, required this.controller, OutputLayout? layout})
+    : layout = layout ?? OutputLayout();
 
   final RunController controller;
+  final OutputLayout layout;
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
+  Widget build(BuildContext context) => FluentApp(
     title: 'MiNERVA Archivist',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(colorSchemeSeed: Colors.indigo),
-    darkTheme: ThemeData(
-      colorSchemeSeed: Colors.indigo,
-      brightness: Brightness.dark,
+    theme: FluentThemeData(
+      brightness: Brightness.light,
+      accentColor: Colors.blue,
+      visualDensity: VisualDensity.standard,
+      fontFamily: 'Segoe UI Variable',
     ),
-    home: ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) => Scaffold(
-        body: Row(
-          children: [
-            SizedBox(width: 280, child: _ProfileList(controller)),
-            const VerticalDivider(width: 1),
-            Expanded(child: _RunView(controller)),
-          ],
+    darkTheme: FluentThemeData(
+      brightness: Brightness.dark,
+      accentColor: Colors.blue,
+      visualDensity: VisualDensity.standard,
+      fontFamily: 'Segoe UI Variable',
+    ),
+    home: CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.f12): () =>
+            layout.update(() => layout.visible = !layout.visible),
+      },
+      child: Focus(
+        autofocus: true,
+        child: ListenableBuilder(
+          listenable: Listenable.merge([controller, layout]),
+          builder: (context, _) => _Shell(controller, layout),
         ),
       ),
     ),
   );
 }
 
-class _ProfileList extends StatelessWidget {
-  const _ProfileList(this.controller);
+class _Shell extends StatelessWidget {
+  const _Shell(this.controller, this.layout);
 
   final RunController controller;
+  final OutputLayout layout;
 
   @override
   Widget build(BuildContext context) {
-    final names = controller.profiles?.names.toList() ?? const <String>[];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: TextFormField(
-            initialValue: controller.cacheDir,
-            decoration: InputDecoration(
-              labelText: 'Cache folder',
-              isDense: true,
-              suffixIcon: IconButton(
-                tooltip: 'Reload profiles',
-                icon: const Icon(Icons.refresh),
-                onPressed: controller.running ? null : controller.load,
-              ),
-            ),
-            onChanged: (value) => controller.cacheDir = value,
-            onFieldSubmitted: (_) => controller.load(),
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: names.length,
-            itemBuilder: (context, index) => ListTile(
-              dense: true,
-              title: Text(names[index]),
-              selected: names[index] == controller.selected,
-              onTap: controller.running
-                  ? null
-                  : () => controller.select(names[index]),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RunView extends StatelessWidget {
-  const _RunView(this.controller);
-
-  final RunController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final options = controller.options;
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.all(16),
+    final c = controller;
+    final theme = FluentTheme.of(context);
+    final runnable =
+        !c.running && !c.loading && (c.options?.dats.isNotEmpty ?? false);
+    return ColoredBox(
+      color: theme.resources.solidBackgroundFillColorBase,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (controller.loadError case final error?)
-            Text(error, style: TextStyle(color: theme.colorScheme.error)),
-          if (options != null) ...[
-            Text(controller.selected!, style: theme.textTheme.headlineSmall),
-            const SizedBox(height: 4),
-            Text(options.root ?? 'No ROM root: selection only'),
-            Text(
-              [
-                options.dats.join(' + '),
-                'lang ${options.languages.join(',')}',
-                'priority ${options.priority.map((a) => a.name).join(',')}'
-                    '${options.langCount == null ? "" : " (${options.langCount!.name})"}',
-                options.layout.cli,
-                if (options.wishlist != null) 'wishlist',
-                if (options.skip.isNotEmpty)
-                  'skips ${options.skip.map((s) => s.name).join(',')}',
-              ].join('  ·  '),
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              spacing: 8,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
               children: [
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.visibility_outlined),
-                  label: const Text('Preview'),
-                  onPressed: controller.running
-                      ? null
-                      : () => controller.start(apply: false),
-                ),
-                FilledButton.icon(
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Apply'),
-                  onPressed: controller.running
-                      ? null
-                      : () => controller.start(apply: true),
-                ),
-                if (controller.running) ...[
-                  TextButton.icon(
-                    icon: const Icon(Icons.stop),
-                    label: const Text('Stop'),
-                    onPressed: controller.stop,
+                _ProfileBar(c),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: CommandBar(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    overflowBehavior:
+                        CommandBarOverflowBehavior.dynamicOverflow,
+                    primaryItems: [
+                      CommandBarButton(
+                        icon: const Icon(FluentIcons.view),
+                        label: const Text('Preview'),
+                        onPressed: runnable
+                            ? () => c.start(apply: false)
+                            : null,
+                      ),
+                      CommandBarButton(
+                        icon: const Icon(FluentIcons.play),
+                        label: const Text('Apply'),
+                        onPressed: runnable ? () => c.start(apply: true) : null,
+                      ),
+                      if (c.running)
+                        CommandBarButton(
+                          icon: const Icon(FluentIcons.stop),
+                          label: const Text('Stop'),
+                          onPressed: c.stop,
+                        ),
+                      const CommandBarSeparator(),
+                      CommandBarButton(
+                        icon: const Icon(FluentIcons.command_prompt),
+                        label: Text(
+                          layout.visible ? 'Hide output' : 'Show output',
+                        ),
+                        tooltip: 'F12',
+                        onPressed: () => layout.update(
+                          () => layout.visible = !layout.visible,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ],
-                if (controller.syncSummary case final summary?) Text(summary),
+                ),
               ],
             ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final platform in controller.platforms)
-                    _PlatformCard(platform, applied: controller.applied),
-                ],
+          ),
+          for (final (title, message) in [
+            if (c.cacheError case final error?) ('Cache folder', error),
+            if (c.actionError case final error?) ('Profile', error),
+            if (c.optionsError case final error?)
+              ('These settings cannot run', error),
+          ])
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: InfoBar(
+                title: Text(title),
+                content: Text(message),
+                severity: InfoBarSeverity.error,
               ),
             ),
-          ],
+          SizedBox(
+            height: 2,
+            child: c.running || c.loading ? const ProgressBar() : null,
+          ),
+          Expanded(
+            child: OutputHost(
+              layout: layout,
+              controller: c,
+              content: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 4, 16),
+                child: ProfileForm(
+                  c,
+                  footer: Section(
+                    title: 'Cache folder',
+                    children: [
+                      Field(
+                        help:
+                            'Where profiles.jsonc, the DATs and the metadata '
+                            'live. Remembered for the next launch.',
+                        child: _CacheField(c),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _PlatformCard extends StatelessWidget {
-  const _PlatformCard(this.platform, {required this.applied});
+/// The profile name with its suggestions, and the buttons that act on it.
+class _ProfileBar extends StatelessWidget {
+  const _ProfileBar(this.controller);
 
-  final PlatformProgress platform;
-  final bool applied;
+  final RunController controller;
+
+  Future<void> _delete(BuildContext context) async {
+    final c = controller;
+    final name = c.name.trim();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => ContentDialog(
+        title: const Text('Delete profile?'),
+        content: Text(
+          '"$name" is removed from ${p.basename(c.profilesFile.path)}. '
+          'The settings on screen stay as they are.',
+        ),
+        actions: [
+          Button(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
+          ),
+          FilledButton(
+            child: const Text('Delete'),
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await c.deleteProfile();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final dry = applied ? '' : ' (preview)';
-    final lines = [
-      if (platform.selection case final selection?) ...[
-        'Selected ${selection.stats.selected} of ${selection.stats.total}'
-            '${selection.stats.reasons.isEmpty ? "" : "  (${selection.stats.reasons.join(', ')})"}',
-        for (final entry in selection.unmatchedWishlist)
-          'Wishlist entry matches nothing: $entry',
+    final c = controller;
+    final idle = !c.running && c.profiles != null;
+    return Row(
+      spacing: 6,
+      children: [
+        SizedBox(width: 300, child: _ProfileBox(c, enabled: idle)),
+        Button(
+          onPressed: idle && c.nameExists ? c.loadProfile : null,
+          child: const Text('Load'),
+        ),
+        Button(
+          onPressed: c.canSave ? c.saveProfile : null,
+          child: const Text('Save'),
+        ),
+        Button(
+          onPressed: idle && c.nameExists ? () => _delete(context) : null,
+          child: const Text('Delete'),
+        ),
       ],
-      if (platform.audit case final audit?)
-        '${audit.present.length}/${audit.results.length} on disk, '
-            '${audit.missing.length} missing, '
-            '${audit.unknownFiles.length} unknown',
-      if (platform.download case final download?) ...[
-        '${download.plan.selected.length} to download, '
-            '${_size(download.plan.totalBytes)}'
-            '${download.seeders == null ? "" : ", ${download.seeders} seeders"}$dry',
-        for (final name in download.plan.unmatched) 'Not distributed: $name',
-        for (final name in download.held) 'Held by a curated folder: $name',
-      ],
-      if (platform.fetched case final fetched?) '$fetched file(s) downloaded',
-      if (platform.organized case final actions?)
-        'Organize: ${actions.summary}$dry',
-      if (platform.playlists case final count?) '$count playlist(s)$dry',
-      if (platform.pruned case final pruned?)
-        '${pruned.moved.length} moved to $trashFolderName$dry',
+    );
+  }
+}
+
+/// A text box that lists the stored profiles matching what is typed, read
+/// afresh on every build so a new cache folder shows its own names at once.
+class _ProfileBox extends StatefulWidget {
+  const _ProfileBox(this.controller, {required this.enabled});
+
+  final RunController controller;
+  final bool enabled;
+
+  @override
+  State<_ProfileBox> createState() => _ProfileBoxState();
+}
+
+class _ProfileBoxState extends State<_ProfileBox> {
+  final _focus = FocusNode();
+  final _overlay = OverlayPortalController();
+  final _link = LayerLink();
+  int _active = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_focusChanged);
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _focusChanged() {
+    if (_focus.hasFocus) {
+      _open();
+    } else {
+      _overlay.hide();
+    }
+  }
+
+  void _open() {
+    _active = -1;
+    _overlay.show();
+    setState(() {});
+  }
+
+  List<String> get _matches {
+    final c = widget.controller;
+    final query = c.name.trim().toLowerCase();
+    final names = c.profiles?.names.toList() ?? const <String>[];
+    final filtered = [
+      for (final name in names)
+        if (name.toLowerCase().contains(query)) name,
     ];
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(platform.name, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            for (final line in lines) Text(line),
-            for (final failure in platform.failures)
-              Text(failure, style: TextStyle(color: theme.colorScheme.error)),
-            if (platform.transfer case final transfer?
-                when platform.fetched == null)
-              _TransferTable(transfer),
-          ],
+    return c.nameExists ? names : filtered;
+  }
+
+  void _pick(String name) {
+    widget.controller.rename(name);
+    _overlay.hide();
+  }
+
+  KeyEventResult _key(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final matches = _matches;
+    switch (event.logicalKey) {
+      case LogicalKeyboardKey.arrowDown:
+        if (!_overlay.isShowing) _open();
+        setState(() => _active = (_active + 1).clamp(0, matches.length - 1));
+      case LogicalKeyboardKey.arrowUp:
+        setState(() => _active = (_active - 1).clamp(0, matches.length - 1));
+      case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter
+          when _overlay.isShowing && _active >= 0 && _active < matches.length:
+        _pick(matches[_active]);
+      case LogicalKeyboardKey.escape when _overlay.isShowing:
+        _overlay.hide();
+      default:
+        return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    final theme = FluentTheme.of(context);
+    return OverlayPortal(
+      controller: _overlay,
+      overlayChildBuilder: (context) {
+        final matches = _matches;
+        return Positioned(
+          width: 420,
+          child: CompositedTransformFollower(
+            link: _link,
+            targetAnchor: Alignment.bottomLeft,
+            offset: const Offset(0, 4),
+            child: TextFieldTapRegion(
+              child: FlyoutContent(
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(maxHeight: 420),
+                child: matches.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(
+                          c.profiles?.names.isEmpty ?? true
+                              ? 'No profiles yet. Type a name and Save.'
+                              : 'No profile matches; Save creates it.',
+                          style: theme.typography.caption,
+                        ),
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: matches.length,
+                        itemBuilder: (context, index) {
+                          final name = matches[index];
+                          return ListTile.selectable(
+                            selected:
+                                index == _active ||
+                                (_active < 0 && name == c.name.trim()),
+                            title: Text(name, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(
+                              c.summary(name),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onSelectionChange: (_) => _pick(name),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+      child: CompositedTransformTarget(
+        link: _link,
+        child: Focus(
+          onKeyEvent: _key,
+          skipTraversal: true,
+          child: SyncedTextBox(
+            key: const ValueKey('profile-name'),
+            value: c.name,
+            focusNode: _focus,
+            placeholder: 'Profile name',
+            enabled: widget.enabled,
+            onChanged: (text) {
+              c.rename(text);
+              if (!_overlay.isShowing) _open();
+              setState(() => _active = -1);
+            },
+            onSubmitted: (_) => c.nameExists ? c.loadProfile() : null,
+            suffix: IconButton(
+              icon: const Icon(FluentIcons.chevron_down, size: 10),
+              onPressed: widget.enabled
+                  ? () => _overlay.isShowing ? _overlay.hide() : _open()
+                  : null,
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-/// Every requested file with its own progress, largest remaining first.
-class _TransferTable extends StatelessWidget {
-  const _TransferTable(this.snapshot);
+/// The cache path: typing, pasting or browsing loads a folder, but only one
+/// that exists and differs from the folder already loaded.
+class _CacheField extends StatefulWidget {
+  const _CacheField(this.controller);
 
-  final TransferSnapshot snapshot;
+  final RunController controller;
 
   @override
-  Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodySmall;
-    final files = [...snapshot.files]
-      ..sort((a, b) => _rank(a).compareTo(_rank(b)));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Divider(),
-        Text(
-          '${snapshot.files.where((f) => f.isComplete).length}/'
-          '${snapshot.files.length} files  ·  '
-          '${_size(snapshot.done)} of ${_size(snapshot.total)}  ·  '
-          '${_size(snapshot.bytesPerSecond)}/s  ·  '
-          '${snapshot.seeds} seeds, ${snapshot.peers} peers',
-          style: style,
-        ),
-        const SizedBox(height: 8),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 360),
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: files.length,
-            itemExtent: 28,
-            itemBuilder: (context, index) {
-              final file = files[index];
-              return Row(
-                spacing: 12,
-                children: [
-                  Expanded(
-                    flex: 5,
-                    child: Text(
-                      file.name,
-                      style: style,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  SizedBox(
-                    width: 80,
-                    child: Text(
-                      _size(file.total),
-                      style: style,
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: LinearProgressIndicator(value: file.fraction),
-                  ),
-                  SizedBox(
-                    width: 52,
-                    child: Text(
-                      '${(file.fraction * 100).toStringAsFixed(1)}%',
-                      style: style,
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
+  State<_CacheField> createState() => _CacheFieldState();
+}
+
+class _CacheFieldState extends State<_CacheField> {
+  late final _text = TextEditingController(text: widget.controller.cacheDir);
+  final _focus = FocusNode();
+  Timer? _debounce;
+  String? _error;
+  late String _shown = widget.controller.cacheDir;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_follow);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_follow);
+    _debounce?.cancel();
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  /// Shows the folder the controller settled on unless the user is typing.
+  void _follow() {
+    final dir = widget.controller.cacheDir;
+    if (!_focus.hasFocus && _text.text != dir) {
+      _text.text = dir;
+      _shown = dir;
+    }
+  }
+
+  void _changed(String text) {
+    _debounce?.cancel();
+    final target = text.trim();
+    final pasted = (text.length - _shown.length).abs() > 1;
+    _shown = text;
+    if (target.isNotEmpty && widget.controller.isCurrent(target)) {
+      setState(() => _error = null);
+      return;
+    }
+    _debounce = Timer(
+      pasted ? Duration.zero : const Duration(milliseconds: 600),
+      () => _apply(target),
     );
   }
 
-  /// Active transfers first, then waiting, then finished.
-  static int _rank(FileTransfer file) => switch (file) {
-    FileTransfer(isComplete: true) => 2,
-    FileTransfer(done: 0) => 1,
-    _ => 0,
-  };
-}
+  Future<void> _apply(String target) async {
+    _debounce?.cancel();
+    final c = widget.controller;
+    if (target.isEmpty || c.isCurrent(target)) return;
+    if (!await Directory(target).exists()) {
+      if (mounted) setState(() => _error = 'Folder not found.');
+      return;
+    }
+    if (mounted) setState(() => _error = null);
+    await c.load(directory: target);
+  }
 
-String _size(int bytes) => switch (bytes) {
-  >= 1 << 30 => '${(bytes / (1 << 30)).toStringAsFixed(2)} GB',
-  >= 1 << 20 => '${(bytes / (1 << 20)).toStringAsFixed(1)} MB',
-  _ => '${(bytes / 1024).toStringAsFixed(0)} KB',
-};
+  Future<void> _browse() async {
+    final c = widget.controller;
+    final typed = _text.text.trim();
+    final picked = await getDirectoryPath(
+      initialDirectory: Directory(typed).existsSync() ? typed : c.cacheDir,
+      confirmButtonText: 'Use folder',
+    );
+    if (picked == null || !mounted) return;
+    _text.text = picked;
+    _shown = picked;
+    await _apply(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    final theme = FluentTheme.of(context);
+    final error = _error ?? c.cacheError;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextBox(
+                controller: _text,
+                focusNode: _focus,
+                enabled: !c.running,
+                placeholder: 'Folder with profiles.jsonc',
+                onChanged: _changed,
+                onSubmitted: (text) => _apply(text.trim()),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Tooltip(
+              message: 'Browse',
+              child: Button(
+                onPressed: c.running ? null : _browse,
+                child: const Icon(FluentIcons.open_folder_horizontal, size: 14),
+              ),
+            ),
+          ],
+        ),
+        if (c.loading)
+          const Padding(padding: EdgeInsets.only(top: 6), child: ProgressBar())
+        else if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              error,
+              style: theme.typography.caption?.copyWith(
+                color: Colors.errorPrimaryColor,
+              ),
+            ),
+          )
+        else if (c.profiles != null && !c.profilesFile.existsSync())
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'No profiles.jsonc here yet; saving creates it.',
+              style: theme.typography.caption,
+            ),
+          ),
+      ],
+    );
+  }
+}

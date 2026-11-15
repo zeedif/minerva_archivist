@@ -411,6 +411,17 @@ Future<List<File>> locateDats(String reference, String cacheDir) async {
   return found;
 }
 
+/// Every `source:system` reference [locateDats] can resolve from [cacheDir],
+/// sorted.
+Future<List<String>> cachedDatReferences(String cacheDir) async {
+  const resolver = SystemNameResolver();
+  return {
+    for (final source in _datSources)
+      for (final file in await _datsIn(Directory(p.join(cacheDir, source))))
+        '$source:${resolver.baseSystem(p.basenameWithoutExtension(file.path))}',
+  }.toList()..sort();
+}
+
 const _datSources = ['nointro', 'mame-redump', 'redump'];
 
 Future<List<File>> _datsIn(

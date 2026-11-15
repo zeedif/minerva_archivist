@@ -80,7 +80,7 @@ minerva run gb psx --apply  # run some
 minerva run --all           # preview all
 ```
 
-A profile overrides `defaults` and the command line overrides both. Relative paths resolve against the file. See [examples/profiles.jsonc](examples/profiles.jsonc). The desktop app reads the same file.
+A profile overrides `defaults` and the command line overrides both. Relative paths resolve against the file. See [examples/profiles.jsonc](examples/profiles.jsonc). The desktop app edits the same file. Profiles work as presets: type a name and Save stores the current settings under it, Load replaces the settings with a stored profile, and the name field suggests the stored profiles as you type. The settings offer only the values each option accepts (DATs, languages and regions found in the cache, layouts, exclusions), and the priority, languages and regions are ordered by dragging. Saving rewrites only the profile saved, keeps the comments and the rest of the file as they are, and leaves out whatever `defaults` already gives. A missing profiles file is created on first save. The app remembers the last cache folder that loaded; on first launch it uses its argument or the nearest `.minerva-cache` above the working directory. The output panel is read-only text you can select and copy; it docks left, right or at the bottom, floats inside the window, or hides with F12.
 
 ## License
 
