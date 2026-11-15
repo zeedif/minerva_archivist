@@ -2,7 +2,7 @@ name: minerva_core
 description: >-
   Audits, filters (1G1R) and selectively downloads ROM sets from the MiNERVA
   Archive. Pure Dart; shared by the CLI and the desktop app.
-version: 3.0.0
+version: 3.0.1
 publish_to: none
 resolution: workspace
 

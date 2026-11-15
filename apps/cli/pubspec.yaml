@@ -1,6 +1,6 @@
 name: minerva_cli
 description: Command-line front end for MiNERVA Archivist.
-version: 3.0.0
+version: 3.0.1
 publish_to: none
 resolution: workspace
 
