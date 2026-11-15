@@ -129,6 +129,13 @@ void main() {
       expect(await names('redump:Sega - Saturn'), ['redump/Sega - Saturn.dat']);
     });
 
+    test('matches a system the archive files under another name', () async {
+      await touch(
+        'nointro',
+        'Sony - PlayStation Vita (PSVgameSD) (20260101-000000).dat',
+      );
+      expect(await names('Sony - PlayStation Vita (PSVgameSD)'), hasLength(1));
+    });
     test('accepts a path and fails on an unknown system', () async {
       final path = p.join(cache.path, 'redump', 'Sega - Saturn.dat');
       expect((await locateDats(path, cache.path)).single.path, path);

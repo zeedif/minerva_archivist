@@ -392,7 +392,7 @@ Future<List<File>> locateDats(String reference, String cacheDir) async {
     _ => (null, reference),
   };
   const resolver = SystemNameResolver();
-  final wanted = system.trim().toLowerCase();
+  final wanted = resolver.baseSystem(system).toLowerCase();
   final found = <File>[];
   for (final folder in source == null ? _datSources : [source]) {
     final matches = [
