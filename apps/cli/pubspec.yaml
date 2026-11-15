@@ -1,0 +1,20 @@
+name: minerva_cli
+description: Command-line front end for MiNERVA Archivist.
+version: 3.0.0-dev
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.12.2
+
+executables:
+  minerva:
+
+dependencies:
+  args: ^2.7.0
+  minerva_core:
+    path: ../../packages/minerva_core
+  path: ^1.9.1
+
+dev_dependencies:
+  lints: ^6.1.0
