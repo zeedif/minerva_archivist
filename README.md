@@ -1,140 +1,87 @@
-<h1 align="center">MiNERVA Archivist</h1>
+# MiNERVA Archivist
 
-<div align="center">
+[Español](README.ES.md)
 
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#install)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Dart SDK](https://img.shields.io/badge/dart-%E2%89%A53.12-0175C2)](https://dart.dev)
+Curates ROM collections against No-Intro and Redump DATs: picks one dump per game (1G1R), downloads what is missing from the [MiNERVA Archive](https://minerva-archive.org), lays the folder out for EmulationStation-DE and quarantines what does not belong. Selection follows [Retool](https://github.com/unexpectedpanda/retool)'s clonelists and metadata.
 
-**English** · [Español](README.ES.md)
+It is a Dart workspace: `packages/minerva_core` holds all the logic, `apps/cli` is the command line and `apps/desktop` a Flutter front end over the same profiles.
 
-</div>
-
-<p align="center">
-A command-line ROM librarian: it picks one game per title (1G1R), downloads only
-what you're missing, and keeps the folder tidy — without you babysitting it.
-</p>
-
----
-
-## What it is
-
-You have DAT files and a ROM folder. MiNERVA Archivist reads the DATs, works out
-which single version of each game you actually want, checks what's already on
-disk, fetches the rest, and lays everything out.
-
-It carries its own 1G1R engine — a port of [Retool](https://github.com/unexpectedpanda/retool)'s
-selection logic — so there's no second tool to run first. Clonelists, metadata,
-RetroAchievements and MIA data are pulled straight from
-[`retool-clonelists-metadata`](https://github.com/unexpectedpanda/retool-clonelists-metadata)
-and cached locally.
-
-## What it does
-
-- **Reads any DAT you throw at it.** No-Intro, Redump and MAME-Redump CHD sets
-  are detected from the file itself — no type flags.
-- **Picks one game per title.** Production status → language → region →
-  achievements → clonelist priority → revision. An enhanced re-release stands in
-  for the edition it replaces; a multi-game pack yields to the games in it unless
-  you say otherwise.
-- **Cuts what you don't want.** One `--exclude` list covers prototypes, betas,
-  trial discs, bonus discs, pirates, MIA dumps, applications, BIOS, manuals,
-  coverdiscs and video — recognised by category or by name.
-- **Keeps what you do.** Naming a language or a region gives you that set; a
-  wishlist and an achievements filter each name their own, and say whether they
-  add to each other or narrow each other.
-- **Downloads only the gaps.** Matches missing games against the platform-wide
-  torrent and hands just those files to `aria2c`.
-- **Tidies up afterwards.** Four ES-DE-compatible layouts, `.m3u` playlists for
-  multi-disc games, and orphan cleanup that moves files to `.trash` instead of
-  deleting them.
-
-Everything that touches your files is a **dry run by default** — add `--apply`
-when you're happy with the plan.
-
-## Install
-
-Dart SDK ≥ 3.12.
+## Build
 
 ```sh
 dart pub get
-
-# run from source
-dart run bin/minerva_archivist.dart <command> [options]
-
-# or compile a standalone binary (faster startup)
-dart compile exe bin/minerva_archivist.dart -o minerva_archivist
+cd apps/cli && dart build cli          # build/cli/.../bundle/bin/minerva.exe
+cd apps/desktop && flutter build windows
 ```
 
-Downloading needs [`aria2c`](https://github.com/aria2/aria2/releases) on `PATH`
-or passed via `--aria2 <path>`. Everything else works offline once synced.
+The bundle's `lib/` folder carries libtorrent and must stay beside `bin/`. From source, `dart run apps/cli/bin/minerva.dart` works as `minerva`.
 
-## Quick start
+## Use
 
 ```sh
-# 1. mirror the metadata locally (re-run anytime; only changed files are fetched)
-minerva_archivist sync
-
-# 2. see what the selection looks like — nothing is written
-minerva_archivist filter -d <dat-or-folder>
-
-# 3. preview the whole pipeline against your library
-minerva_archivist run -d <dat-or-folder> -r <rom-root>
-
-# 4. do it for real
-minerva_archivist run -d <dat-or-folder> -r <rom-root> --apply
+minerva sync                                   # metadata and Redump/MAME-Redump DATs into .minerva-cache
+minerva select -d "Nintendo - Game Boy" --list # what would be wanted; touches nothing
+minerva run -d "Nintendo - Game Boy" -r D:/Roms/gb           # report only
+minerva run -d "Nintendo - Game Boy" -r D:/Roms/gb --apply   # do it
 ```
 
-A typical everyday invocation — Spanish first, English as fallback, no demos or
-BIOS, downloading whatever's missing:
+No-Intro DATs are not redistributable: download them from Dat-o-Matic into `.minerva-cache/nointro/`. A DAT is named by its system, so the date stamp in the file name never matters; prefix a source (`redump:Sony - PlayStation`) when two sources share a name. A path to a DAT or a folder of DATs also works.
 
-```sh
-minerva_archivist run -d <dat-or-folder> -r <rom-root> \
-  --lang Es,En,Ja \
-  --exclude mia,preproduction,demos,pirate,bonus-discs,applications,bios,manuals,video \
-  --with-download --extract --apply
-```
+`run` goes through these stages. Nothing is downloaded, moved or written without `--apply`.
 
-Each stage reports what it dropped and why:
-
-```
-[select] 404 in DAT -> 309 wanted  (status -89, language -6)
-[audit] 0/309 on disk, 309 missing, 0 unknown
-[download] 309 missing -> 303 in torrent, 6 not distributed, 102.5 MB
-```
-
-## Commands
-
-| Command | What it does |
+| Stage | What it does |
 |---|---|
-| `sync` | Mirror clonelists / metadata / RetroAchievements / MIA and Redump / MAME-Redump DATs locally |
-| `filter` | Show the 1G1R selection — offline, read-only |
-| `audit` | Compare the selection against what's on disk |
-| `download` | Fetch missing games from the platform torrent |
-| `organize` | Lay files out in one of four ES-DE layouts |
-| `m3u` | Write playlists for multi-disc games |
-| `prune` | Move anything unselected to `.trash` |
-| `run` | All of the above, in order |
+| select | Applies the options below and keeps one dump per game. |
+| audit | Matches files to the selection by hash. Zip entries are identified by the CRC-32 and size in the zip directory, without decompressing. |
+| `download` | Fetches missing games from the platform torrent, only the files needed, with per-file progress. Nothing keeps running or seeding afterwards. |
+| `organize` | Renames to the DAT name and applies `--layout`. |
+| `playlists` | Writes an `.m3u` per multi-disc game. |
+| `prune` | Moves unknown and duplicate files to `<root>/.trash`. Never deletes. |
 
-Every flag, every combination, and the wishlist format live in
-**[GUIDE.md](GUIDE.md)** ([español](GUIDE.ES.md)).
+`sync` also runs first as a stage. Leave stages out with `--skip`.
 
-## Contributing
+A folder that holds a game next to files of your own (patches, manuals, translations) is left where it is: nothing in it is moved or pruned, and it is only renamed to the game's name when it holds exactly one game. `<root>/.minerva` is the tool's working folder.
 
-Architecture, layout conventions and how to run the tests are in
-**[CONTRIBUTING.md](CONTRIBUTING.md)**.
+## Options
 
-## Credits & license
+| Option | Meaning |
+|---|---|
+| `--lang Es,En` | Language priority, best first. A title speaking none of them is dropped. `Other` stands for unlisted languages and `Unknown` for titles with none; `Es` covers `Es-MX`. Default `En`. |
+| `--region USA,Europe` | Region priority; restricts like `--lang`. Default: every region. |
+| `--priority lang,ra,langcount` | Tie-breaks that choose among the dumps of one game, best first: `lang`, `region`, `ra` (achievements, hash-verified first), `langcount`. Default `lang,region,ra`. |
+| `--langcount most\|fewest` | Direction of the `langcount` axis. Required when `--priority` names it, rejected otherwise. |
+| `--wishlist file.jsonc` | JSON/JSONC array of game names; any regional spelling works. Entries matching nothing are reported. |
+| `--wishlist-mode absolute\|subset` | `absolute`: everything named is selected and the other filters only pick its dump. `subset`: a named title must still pass them. |
+| `--achievements any\|approved` | Only titles with RetroAchievements; `approved` keeps just the dumps the set was built on. |
+| `--supersets prefer\|ignore` | Whether an edition containing the base game takes its slot. |
+| `--compilations never\|fill\|prefer\|first` | What a multi-game pack is worth against the games in it. |
+| `--exclude demos,bios,...` | Kinds of dump dropped outright. `minerva run --help` lists them. |
+| `--layout` | `zip`, `zip-in-folder`, `extracted`, `extracted-in-folder`. |
+| `--protect folder` | Top-level folders never touched. |
+| `--depth n` | How many folders below the root are searched; unlimited by default. Useful when the root also holds deep trees that are not ROMs. |
 
-The selection engine follows [Retool](https://github.com/unexpectedpanda/retool)
-by unexpectedpanda, and consumes its
-[clonelists and metadata](https://github.com/unexpectedpanda/retool-clonelists-metadata).
-DAT data comes from the [No-Intro](https://no-intro.org) and
-[Redump](http://redump.org) preservation projects. Thanks to all of them.
+## Profiles
 
-Licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE).
+`<cache>/profiles.jsonc` stores options per platform under the same names, so a platform is one word:
 
-    MiNERVA Archivist  Copyright (C) 2026  Zeedif
-    This program comes with ABSOLUTELY NO WARRANTY.
-    This is free software, and you are welcome to redistribute it
-    under certain conditions.
+```jsonc
+{
+  "defaults": { "lang": ["Es", "En"], "layout": "extracted", "exclude": ["demos", "bios"] },
+  "profiles": {
+    "gb":  { "dat": "Nintendo - Game Boy", "root": "D:/Roms/gb", "achievements": "any" },
+    "psx": { "dat": ["mame-redump:Sony - PlayStation", "redump:Sony - PlayStation"], "root": "D:/Roms/psx" }
+  }
+}
+```
+
+```sh
+minerva profiles            # list them
+minerva run gb psx --apply  # run some
+minerva run --all           # preview all
+```
+
+A profile overrides `defaults` and the command line overrides both. Relative paths resolve against the file. See [examples/profiles.jsonc](examples/profiles.jsonc). The desktop app reads the same file.
+
+## License
+
+GPL-3.0. Clonelists and metadata come from [retool-clonelists-metadata](https://github.com/unexpectedpanda/retool-clonelists-metadata). See [CONTRIBUTING.md](CONTRIBUTING.md) to work on the code.
