@@ -69,13 +69,13 @@ class MinervaApp extends StatelessWidget {
       brightness: Brightness.light,
       accentColor: Colors.blue,
       visualDensity: VisualDensity.standard,
-      fontFamily: 'Segoe UI Variable',
+      fontFamily: _font,
     ),
     darkTheme: FluentThemeData(
       brightness: Brightness.dark,
       accentColor: Colors.blue,
       visualDensity: VisualDensity.standard,
-      fontFamily: 'Segoe UI Variable',
+      fontFamily: _font,
     ),
     home: CallbackShortcuts(
       bindings: {
@@ -99,6 +99,9 @@ String describe(AppLocalizations l, Problem problem) => switch (problem.kind) {
   ProblemKind.unwritable => l.cannotSave(problem.subject, problem.detail),
   ProblemKind.invalid => l.subjectProblem(problem.subject, problem.detail),
 };
+
+/// Windows 11's UI face; other systems keep their own.
+final _font = Platform.isWindows ? 'Segoe UI Variable' : null;
 
 class _Shell extends StatelessWidget {
   const _Shell(this.controller, this.layout, this.preferences);

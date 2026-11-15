@@ -521,7 +521,13 @@ final class _Palette {
 
   TextStyle get mono => TextStyle(
     fontFamily: 'Cascadia Mono',
-    fontFamilyFallback: const ['Consolas', 'Courier New'],
+    fontFamilyFallback: const [
+      'Consolas',
+      'Menlo',
+      'DejaVu Sans Mono',
+      'Liberation Mono',
+      'monospace',
+    ],
     fontSize: 12.5,
     height: 1.4,
     color: text,
