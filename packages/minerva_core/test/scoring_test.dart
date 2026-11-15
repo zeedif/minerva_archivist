@@ -1935,7 +1935,11 @@ void main() {
           regions: const ['Europe'],
         ),
         _game('Tour (USA)', langs: const ['En', 'Es'], regions: const ['USA']),
-        _game('Tour (Japan)', langs: const ['En', 'Ja'], regions: const ['Japan']),
+        _game(
+          'Tour (Japan)',
+          langs: const ['En', 'Ja'],
+          regions: const ['Japan'],
+        ),
       ];
       final winner = const GameSelector()
           .select(

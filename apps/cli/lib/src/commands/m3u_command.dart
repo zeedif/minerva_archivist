@@ -33,10 +33,7 @@ class M3uCommand extends ArchivistCommand with SelectionCommand {
 
     var total = 0;
     for (final t in await loadSelectedTargets()) {
-      final report = await auditor.audit(
-        dat: t.target,
-        romRoot: root,
-      );
+      final report = await auditor.audit(dat: t.target, romRoot: root);
       final written = await generator.generate(
         present: report.present,
         romRoot: root,

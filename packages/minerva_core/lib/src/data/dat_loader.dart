@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
 import '../models/dat.dart';
@@ -17,8 +18,17 @@ final class LogiqxDatParser {
   const LogiqxDatParser();
 
   static const _discExtensions = {
-    '.cue', '.bin', '.iso', '.gdi', '.img', '.toc', '.ccd', '.sub', '.mds',
-    '.mdf', '.raw',
+    '.cue',
+    '.bin',
+    '.iso',
+    '.gdi',
+    '.img',
+    '.toc',
+    '.ccd',
+    '.sub',
+    '.mds',
+    '.mdf',
+    '.raw',
   };
 
   Future<DatFile> parse(String xml) async {
@@ -117,8 +127,7 @@ final class LogiqxDatParser {
   }
 
   RomFormat _formatFor(String name) {
-    final dot = name.lastIndexOf('.');
-    final ext = dot == -1 ? '' : name.substring(dot).toLowerCase();
+    final ext = p.extension(name).toLowerCase();
     if (ext == '.chd') return RomFormat.chd;
     if (_discExtensions.contains(ext)) return RomFormat.raw;
     return RomFormat.cartridge;
@@ -148,7 +157,8 @@ final class LogiqxDatParser {
     var languages = const <String>[];
     for (final t in tags) {
       final parts = t.split(',').map((e) => e.trim()).toList();
-      if (parts.isNotEmpty && parts.every((p) => RegExp(r'^[A-Z][a-z]$').hasMatch(p))) {
+      if (parts.isNotEmpty &&
+          parts.every((p) => RegExp(r'^[A-Z][a-z]$').hasMatch(p))) {
         languages = parts;
         break;
       }
@@ -196,7 +206,9 @@ DatFlavor detectDatFlavor(DatHeader header, Iterable<DatGame> sample) {
   ].whereType<String>().join(' ').toLowerCase();
 
   final sampled = sample.take(50).toList();
-  final hasChd = sampled.any((g) => g.chdRoms.any((r) => r.format == RomFormat.chd));
+  final hasChd = sampled.any(
+    (g) => g.chdRoms.any((r) => r.format == RomFormat.chd),
+  );
 
   if (hasChd || hay.contains('mame redump') || hay.contains('mameredump')) {
     return DatFlavor.mameRedump;
@@ -210,8 +222,9 @@ DatFlavor detectDatFlavor(DatHeader header, Iterable<DatGame> sample) {
   if (hay.contains('retool')) return DatFlavor.retool;
 
   // Structural fallback when the header is uninformative.
-  final hasDiscTracks =
-      sampled.any((g) => g.roms.any((r) => r.format == RomFormat.raw));
+  final hasDiscTracks = sampled.any(
+    (g) => g.roms.any((r) => r.format == RomFormat.raw),
+  );
   if (hasDiscTracks) return DatFlavor.redump;
   if (sampled.isNotEmpty) return DatFlavor.noIntro;
   return DatFlavor.unknown;
@@ -226,7 +239,10 @@ final class DatLoader {
     final xml = utf8.decode(bytes, allowMalformed: true);
     final parsed = await const LogiqxDatParser().parse(xml);
     final flavor = detectDatFlavor(parsed.header, parsed.games);
-    return DatFile(header: parsed.header.copyWith(flavor: flavor), games: parsed.games);
+    return DatFile(
+      header: parsed.header.copyWith(flavor: flavor),
+      games: parsed.games,
+    );
   }
 
   /// Load a single `.dat` file, or every `.dat` under a directory.
@@ -235,7 +251,9 @@ final class DatLoader {
     final files = <File>[];
     if (type == FileSystemEntityType.directory) {
       await for (final e in Directory(pathOrDir).list(recursive: true)) {
-        if (e is File && e.path.toLowerCase().endsWith('.dat')) files.add(e);
+        if (e is File && p.extension(e.path).toLowerCase() == '.dat') {
+          files.add(e);
+        }
       }
       files.sort((a, b) => a.path.compareTo(b.path));
     } else if (type == FileSystemEntityType.file) {

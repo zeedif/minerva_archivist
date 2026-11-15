@@ -44,7 +44,16 @@ final class ChdHeader {
   /// MD5 of the raw payload — v1-v3 only.
   final String? md5;
 
-  static const _magic = [0x4d, 0x43, 0x6f, 0x6d, 0x70, 0x72, 0x48, 0x44]; // 'MComprHD'
+  static const _magic = [
+    0x4d,
+    0x43,
+    0x6f,
+    0x6d,
+    0x70,
+    0x72,
+    0x48,
+    0x44,
+  ]; // 'MComprHD'
   static const _headerLengthByVersion = {1: 76, 2: 80, 3: 120, 4: 108, 5: 124};
 
   /// Parses [file]'s header, or `null` if it isn't a CHD this understands
@@ -79,12 +88,23 @@ final class ChdHeader {
       rawSha1: _hex(h, 80, 20),
       md5: _hex(h, 44, 16),
     ),
-    4 => ChdHeader(version: version, sha1: _hex(h, 48, 20), rawSha1: _hex(h, 88, 20)),
-    _ => ChdHeader(version: version, sha1: _hex(h, 84, 20), rawSha1: _hex(h, 64, 20)),
+    4 => ChdHeader(
+      version: version,
+      sha1: _hex(h, 48, 20),
+      rawSha1: _hex(h, 88, 20),
+    ),
+    _ => ChdHeader(
+      version: version,
+      sha1: _hex(h, 84, 20),
+      rawSha1: _hex(h, 64, 20),
+    ),
   };
 
   static int _u32(Uint8List b, int offset) =>
-      (b[offset] << 24) | (b[offset + 1] << 16) | (b[offset + 2] << 8) | b[offset + 3];
+      (b[offset] << 24) |
+      (b[offset + 1] << 16) |
+      (b[offset + 2] << 8) |
+      b[offset + 3];
 
   static String _hex(Uint8List b, int offset, int length) {
     final sb = StringBuffer();

@@ -87,7 +87,8 @@ extension OrganizeActionsX on List<OrganizeAction> {
         '${countOf(OrganizeOp.renamed)} renamed in place',
       if (countOf(OrganizeOp.skippedProtected) > 0)
         '${countOf(OrganizeOp.skippedProtected)} protected-skip',
-      if (countOf(OrganizeOp.failed) > 0) '${countOf(OrganizeOp.failed)} failed',
+      if (countOf(OrganizeOp.failed) > 0)
+        '${countOf(OrganizeOp.failed)} failed',
     ];
     return parts.isEmpty ? 'nothing to do' : parts.join(', ');
   }
@@ -103,8 +104,18 @@ final class EsdeRomOrganizer {
   /// If a destination folder already contains any of these, it's treated as a
   /// user folder (patches/saves/hacks) and left untouched.
   static const _userContentExtensions = {
-    '.ips', '.bps', '.ups', '.aps', '.xdelta', '.patch',
-    '.sav', '.srm', '.state', '.cht', '.rtc', '.mcr',
+    '.ips',
+    '.bps',
+    '.ups',
+    '.aps',
+    '.xdelta',
+    '.patch',
+    '.sav',
+    '.srm',
+    '.state',
+    '.cht',
+    '.rtc',
+    '.mcr',
   };
 
   Future<List<OrganizeAction>> organize({
@@ -128,7 +139,13 @@ final class EsdeRomOrganizer {
 
       // One unwritable game must not abort the pipeline.
       try {
-        final action = await _organizeOne(source, game, romRoot, config, dryRun);
+        final action = await _organizeOne(
+          source,
+          game,
+          romRoot,
+          config,
+          dryRun,
+        );
         if (action != null) actions.add(action);
       } on FileSystemException catch (e) {
         actions.add(
@@ -165,7 +182,12 @@ final class EsdeRomOrganizer {
       if (_isProtectedFolder(config, romRoot, game)) {
         return _skip(game, p.join(romRoot.path, game));
       }
-      return _move(source, File(p.join(romRoot.path, game, unit)), game, dryRun);
+      return _move(
+        source,
+        File(p.join(romRoot.path, game, unit)),
+        game,
+        dryRun,
+      );
     }
 
     // --- Extract modes ---
@@ -173,7 +195,12 @@ final class EsdeRomOrganizer {
     if (sourceExt.toLowerCase() != '.zip') {
       if (!folderMode) {
         // Mode 2 (single, loose)
-        return _move(source, File(p.join(romRoot.path, '$game$sourceExt')), game, dryRun);
+        return _move(
+          source,
+          File(p.join(romRoot.path, '$game$sourceExt')),
+          game,
+          dryRun,
+        );
       }
       // Mode 4 (single, loose) -> <game>.<ext>/<game>.<ext>
       final folderName = '$game$sourceExt';
@@ -194,7 +221,7 @@ final class EsdeRomOrganizer {
     try {
       final entries = [
         for (final f in ZipDecoder().decodeStream(input).files)
-          if (!f.name.endsWith('/')) f,
+          if (f.isFile) f,
       ];
       if (entries.isEmpty) return null;
 
@@ -277,8 +304,11 @@ final class EsdeRomOrganizer {
     );
   }
 
-  OrganizeAction _skip(String game, String path) =>
-      OrganizeAction(op: OrganizeOp.skippedProtected, game: game, destination: path);
+  OrganizeAction _skip(String game, String path) => OrganizeAction(
+    op: OrganizeOp.skippedProtected,
+    game: game,
+    destination: path,
+  );
 
   bool _isProtectedFolder(
     OrganizeConfig config,
@@ -505,8 +535,8 @@ final class TrashPruner {
 
   Future<void> _removeIfEmpty(Set<String> candidates, Directory romRoot) async {
     // Deepest first, so a nested pair collapses in one pass.
-    for (final path in candidates.toList()
-      ..sort((a, b) => b.length.compareTo(a.length))) {
+    for (final path
+        in candidates.toList()..sort((a, b) => b.length.compareTo(a.length))) {
       var current = Directory(path);
       while (!p.equals(current.path, romRoot.path) &&
           p.isWithin(romRoot.path, current.path)) {

@@ -163,7 +163,11 @@ final class VariantGroup {
   final List<String> categories;
 
   /// Every title that belongs to the group, whatever its role.
-  Iterable<VariantTitle> get allTitles => [...titles, ...compilations, ...supersets];
+  Iterable<VariantTitle> get allTitles => [
+    ...titles,
+    ...compilations,
+    ...supersets,
+  ];
 }
 
 /// The parsed contents of one clonelist file.
@@ -323,16 +327,23 @@ final class RetroAchievementsIndex {
   Map<String, List<String>> unclaimedEntryNames(Iterable<DatGame> games) {
     final datHashes = <String>{
       for (final g in games)
-        for (final rom in g.roms)
-          ...[?rom.crc32, ?rom.md5, ?rom.sha1, ?rom.sha256],
+        for (final rom in g.roms) ...[
+          ?rom.crc32,
+          ?rom.md5,
+          ?rom.sha1,
+          ?rom.sha256,
+        ],
     };
     final claimedKeys = <String>{};
     final byKey = <String, List<String>>{};
     for (final e in _entries) {
       if (e.name.isEmpty) continue;
-      final reached = [?e.crc32, ?e.md5, ?e.sha1, ?e.sha256].any(
-        datHashes.contains,
-      );
+      final reached = [
+        ?e.crc32,
+        ?e.md5,
+        ?e.sha1,
+        ?e.sha256,
+      ].any(datHashes.contains);
       final key = normalize(e.name);
       if (reached) {
         claimedKeys.add(key);
@@ -403,8 +414,7 @@ final class InternalConfig {
   /// justifies no independent ordering of languages, only the one the region
   /// order already implies.
   List<String> get defaultLanguageOrder => {
-    for (final region in defaultRegionOrder)
-      ...?regionImpliedLanguages[region],
+    for (final region in defaultRegionOrder) ...?regionImpliedLanguages[region],
   }.toList();
 
   /// Technical DAT tags used to classify entries.

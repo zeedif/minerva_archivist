@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import '../data/file_scanner.dart';
 import '../models/dat.dart';
+import 'download.dart';
 import 'library.dart';
 
 /// Quarantine folder under the ROM root: written by `TrashPruner`, skipped by
@@ -133,12 +134,34 @@ final class RomAuditor {
   final FileScanner scanner;
 
   static const _discExtensions = {
-    '.cue', '.bin', '.iso', '.gdi', '.img', '.toc', '.ccd', '.sub', '.mds',
-    '.mdf', '.raw', '.chd',
+    '.cue',
+    '.bin',
+    '.iso',
+    '.gdi',
+    '.img',
+    '.toc',
+    '.ccd',
+    '.sub',
+    '.mds',
+    '.mdf',
+    '.raw',
+    '.chd',
   };
   static const _ignoreExtensions = {
-    '.txt', '.xml', '.dat', '.m3u', '.jpg', '.jpeg', '.png', '.nfo', '.sfv',
-    '.md', '.json', '.db', '.ini', '.log',
+    '.txt',
+    '.xml',
+    '.dat',
+    '.m3u',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.nfo',
+    '.sfv',
+    '.md',
+    '.json',
+    '.db',
+    '.ini',
+    '.log',
   };
 
   Future<AuditReport> audit({
@@ -183,8 +206,12 @@ final class RomAuditor {
 
     // SHA-1 is universal across No-Intro/Redump/MAME-Redump; only fall back to
     // CRC/MD5 for entries that lack it.
-    final needCrc = indexRoms.any((e) => e.rom.sha1 == null && e.rom.crc32 != null);
-    final needMd5 = indexRoms.any((e) => e.rom.sha1 == null && e.rom.md5 != null);
+    final needCrc = indexRoms.any(
+      (e) => e.rom.sha1 == null && e.rom.crc32 != null,
+    );
+    final needMd5 = indexRoms.any(
+      (e) => e.rom.sha1 == null && e.rom.md5 != null,
+    );
 
     final bySha1 = <String, _RomRef>{};
     final byMd5 = <String, _RomRef>{};
@@ -228,7 +255,12 @@ final class RomAuditor {
       await for (final sf in scanner.scan(romRoot)) {
         // Quarantined files are not part of the collection: counting them would
         // report a pruned game as present and stop it being re-downloaded.
-        if (p.split(sf.relativePath).first == trashFolderName) continue;
+        if (const {
+          trashFolderName,
+          workFolderName,
+        }.contains(p.split(sf.relativePath).first)) {
+          continue;
+        }
         final ext = p.extension(sf.file.path).toLowerCase();
         if (ignored.contains(ext)) {
           // Not worth hashing, but it still tells us whether a folder is curated.
@@ -286,7 +318,10 @@ final class RomAuditor {
     for (final g in dat.games) {
       final first = g.roms.firstOrNull;
       if (first == null || claimants.containsKey(_key(g, first))) continue;
-      final claim = g.raDumps.map((sha1) => unlisted[sha1]).nonNulls.firstOrNull;
+      final claim = g.raDumps
+          .map((sha1) => unlisted[sha1])
+          .nonNulls
+          .firstOrNull;
       if (claim == null) continue;
       claimants[_key(g, first)] = [claim];
       unknown.remove(claim.file);
@@ -326,7 +361,8 @@ final class RomAuditor {
     for (final g in dat.games) {
       final rawKeys = [for (final r in g.roms) _key(g, r)];
       final chdKeys = [for (final r in g.chdRoms) _key(g, r)];
-      final rawPresent = rawKeys.isNotEmpty && rawKeys.every(matches.containsKey);
+      final rawPresent =
+          rawKeys.isNotEmpty && rawKeys.every(matches.containsKey);
       final chdPresent =
           matchChd && chdKeys.isNotEmpty && chdKeys.every(matches.containsKey);
 
@@ -387,14 +423,15 @@ final class RomAuditor {
         (library.isCuratedPath(c.relativePath) ? 0 : 2) +
         (c.foundName == p.basename(c.relativePath) ? 0 : 1);
     return ([...claims]..sort((a, b) {
-      final preferred = rank(a).compareTo(rank(b));
-      if (preferred != 0) return preferred;
-      final depth = p
-          .split(a.relativePath)
-          .length
-          .compareTo(p.split(b.relativePath).length);
-      return depth != 0 ? depth : a.relativePath.compareTo(b.relativePath);
-    })).first;
+          final preferred = rank(a).compareTo(rank(b));
+          if (preferred != 0) return preferred;
+          final depth = p
+              .split(a.relativePath)
+              .length
+              .compareTo(p.split(b.relativePath).length);
+          return depth != 0 ? depth : a.relativePath.compareTo(b.relativePath);
+        }))
+        .first;
   }
 
   /// Identity of a DAT entry: its strongest digest, so the same bytes described

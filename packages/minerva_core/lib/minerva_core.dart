@@ -11,7 +11,7 @@ export 'src/models/metadata.dart';
 
 // Data (I/O boundaries + implementations).
 export 'src/data/archive_source.dart';
-export 'src/data/aria2_client.dart';
+export 'src/data/torrent_engine.dart';
 export 'src/data/chd_header.dart';
 export 'src/data/dat_mirror.dart';
 export 'src/data/dat_loader.dart';
@@ -26,4 +26,3 @@ export 'src/domain/enrichment.dart';
 export 'src/domain/library.dart';
 export 'src/domain/organize.dart';
 export 'src/domain/selection.dart';
-

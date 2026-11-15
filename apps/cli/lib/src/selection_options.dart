@@ -84,8 +84,7 @@ extension SelectionFlags on ArgParser {
             'Rank titles that carry achievements first, a hash-verified dump '
             'ahead of one only matched by name.',
         'multilang': 'Rank by how many languages the dump carries, most first.',
-        'fewlang':
-            'Rank by how many languages the dump carries, fewest first.',
+        'fewlang': 'Rank by how many languages the dump carries, fewest first.',
       },
       help:
           'Which tie-breaks decide a clone group, best first. region keeps a '

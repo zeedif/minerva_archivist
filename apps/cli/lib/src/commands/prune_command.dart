@@ -57,7 +57,9 @@ class PruneCommand extends ArchivistCommand with SelectionCommand {
         '${apply ? " moved" : " (dry run)"}',
       );
       for (final f in moved) {
-        stdout.writeln('  - ${p.relative(f.path, from: p.join(root.path, trashFolderName))}');
+        stdout.writeln(
+          '  - ${p.relative(f.path, from: p.join(root.path, trashFolderName))}',
+        );
       }
       final twinned = report.duplicatesInCuratedFolders(root);
       if (twinned.isNotEmpty) {

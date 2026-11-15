@@ -13,6 +13,7 @@ dependencies:
   archive: ^4.0.9
   crypto: ^3.0.7
   http: ^1.6.0
+  libtorrent_dart: ^1.2.0
   path: ^1.9.1
   xml: ^7.0.1
 

@@ -1,41 +1,30 @@
-/// Torrent domain types + the pure-Dart `.torrent` (bencode) reader.
+/// `.torrent` metadata, read locally so a selective download can be planned
+/// without contacting the swarm.
 library;
 
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 
-/// Opaque handle to an added torrent within a [TorrentClient] session (an
-/// aria2 GID, a qBittorrent info-hash, etc.).
-typedef TorrentHandle = String;
-
-enum TorrentState {
-  queued,
-  checking,
-  downloading,
-  seeding,
-  paused,
-  completed,
-  error,
-}
-
-/// One file inside a `.torrent`. [index] is **1-based** to line up directly
-/// with aria2's `--select-file`.
-final class TorrentFileEntry {
-  const TorrentFileEntry({
+/// One file inside a torrent. [index] is 0-based, in `info.files` order.
+final class TorrentFile {
+  const TorrentFile({
     required this.index,
     required this.path,
     required this.length,
   });
 
   final int index;
+
+  /// `/`-separated, torrent name included.
   final String path;
   final int length;
+
+  String get basename => p.posix.basename(path);
 }
 
-/// Locally-parsed `.torrent` metadata — enough to compute a selective download
-/// without contacting the swarm.
 final class TorrentManifest {
   const TorrentManifest({
     required this.name,
@@ -43,214 +32,128 @@ final class TorrentManifest {
     required this.files,
   });
 
-  final String name;
-  final String infoHash;
-  final List<TorrentFileEntry> files;
-}
-
-/// A resolved MiNERVA platform and how to obtain its torrent.
-final class PlatformTorrentRef {
-  const PlatformTorrentRef({
-    required this.collection,
-    required this.platform,
-    required this.torrentUri,
-    required this.magnetUri,
-    required this.internalPathPrefix,
-  });
-
-  final String collection;
-  final String platform;
-  final Uri torrentUri;
-  final Uri magnetUri;
-
-  /// Path prefix files share inside the torrent:
-  /// `Minerva_Myrient/<collection>/<platform>/`.
-  final String internalPathPrefix;
-}
-
-final class TorrentAddRequest {
-  const TorrentAddRequest({
-    required this.saveDirectory,
-    this.torrentData,
-    this.magnetUri,
-    this.selectedFileIndices = const [],
-    this.seedAfterComplete = false,
-  });
-
-  /// Raw `.torrent` bytes (preferred over [magnetUri]).
-  final Uint8List? torrentData;
-  final String? magnetUri;
-  final String saveDirectory;
-
-  /// 1-based file indices to download; empty means all files.
-  final List<int> selectedFileIndices;
-  final bool seedAfterComplete;
-}
-
-final class TorrentFileProgress {
-  const TorrentFileProgress({
-    required this.index,
-    required this.path,
-    required this.completedBytes,
-    required this.totalBytes,
-    required this.selected,
-  });
-
-  final int index;
-  final String path;
-  final int completedBytes;
-  final int totalBytes;
-  final bool selected;
-}
-
-final class TorrentProgress {
-  const TorrentProgress({
-    required this.handle,
-    required this.state,
-    required this.completedBytes,
-    required this.totalBytes,
-    required this.downloadSpeed,
-    required this.seeders,
-    required this.peers,
-    this.files = const [],
-  });
-
-  final TorrentHandle handle;
-  final TorrentState state;
-
-  /// Bytes over the **selected** files, not the whole torrent.
-  final int completedBytes;
-  final int totalBytes;
-  final int downloadSpeed; // bytes/s
-  final int seeders;
-  final int peers;
-  final List<TorrentFileProgress> files;
-
-  double get fraction => totalBytes == 0 ? 0 : completedBytes / totalBytes;
-}
-
-/// Pure-Dart `.torrent` reader: decodes bencode, computes the info-hash, and
-/// lists files with 1-based indices (matching aria2 `--select-file`), so the
-/// domain can compute a selective download without touching the swarm.
-final class BencodeTorrentInspector {
-  const BencodeTorrentInspector();
-
-  Future<TorrentManifest> read(Uint8List torrentData) async {
-    final decoder = _Bencode(torrentData);
-    final root = decoder.decode();
-    if (root is! Map<String, Object>) {
-      throw const FormatException('Torrent is not a bencoded dictionary.');
+  /// Decodes a bencoded `.torrent`.
+  ///
+  /// Throws [FormatException] when [bytes] is not one.
+  factory TorrentManifest.parse(Uint8List bytes) {
+    final decoder = _Bencode(bytes);
+    final Object root;
+    try {
+      root = decoder.decode();
+    } on RangeError {
+      throw const FormatException('Torrent data is truncated.');
     }
-    final info = root['info'];
-    if (info is! Map<String, Object>) {
-      throw const FormatException('Torrent has no info dictionary.');
-    }
-
-    final name = utf8.decode(info['name'] as Uint8List, allowMalformed: true);
-    final infoHash = decoder.infoStart != null
-        ? sha1
-              .convert(torrentData.sublist(decoder.infoStart!, decoder.infoEnd!))
-              .toString()
-        : '';
-
-    final files = <TorrentFileEntry>[];
-    final rawFiles = info['files'];
-    if (rawFiles is List) {
-      var index = 1;
-      for (final f in rawFiles) {
-        if (f is! Map<String, Object>) continue;
-        final length = (f['length'] as int?) ?? 0;
-        final segments =
-            (f['path'] as List?)
-                ?.map((e) => utf8.decode(e as Uint8List, allowMalformed: true))
-                .toList() ??
-            const <String>[];
-        files.add(
-          TorrentFileEntry(
-            index: index++,
-            path: [name, ...segments].join('/'),
-            length: length,
+    if (root case {'info': final Map<String, Object> info}) {
+      final name = _text(info['name']);
+      final files = switch (info['files']) {
+        final List<Object> entries => [
+          for (final (index, entry) in entries.indexed)
+            if (entry case {
+              'length': final int length,
+              'path': final List path,
+            })
+              TorrentFile(
+                index: index,
+                path: [name, ...path.map(_text)].join('/'),
+                length: length,
+              ),
+        ],
+        _ => [
+          TorrentFile(
+            index: 0,
+            path: name,
+            length: info['length'] as int? ?? 0,
           ),
-        );
-      }
-    } else {
-      files.add(
-        TorrentFileEntry(index: 1, path: name, length: (info['length'] as int?) ?? 0),
+        ],
+      };
+      return TorrentManifest(
+        name: name,
+        infoHash: sha1
+            .convert(bytes.sublist(decoder.infoStart!, decoder.infoEnd!))
+            .toString(),
+        files: files,
       );
     }
-
-    return TorrentManifest(name: name, infoHash: infoHash, files: files);
+    throw const FormatException('Torrent has no info dictionary.');
   }
+
+  final String name;
+
+  /// Lowercase hex SHA-1 of the `info` dictionary.
+  final String infoHash;
+  final List<TorrentFile> files;
+
+  static String _text(Object? raw) =>
+      raw is Uint8List ? utf8.decode(raw, allowMalformed: true) : '';
 }
 
-/// Minimal bencode decoder that records the byte range of the top-level `info`
-/// value (needed to compute the info-hash).
-class _Bencode {
+/// Bencode decoder that records the byte range of the top-level `info` value.
+final class _Bencode {
   _Bencode(this.data);
 
   final Uint8List data;
-  int _pos = 0;
+  var _pos = 0;
   int? infoStart;
   int? infoEnd;
 
-  Object decode() {
-    final c = data[_pos];
-    return switch (c) {
-      0x69 => _int(), // 'i'
-      0x6c => _list(), // 'l'
-      0x64 => _dict(), // 'd'
-      _ => _string(),
-    };
-  }
+  static const _i = 0x69, _l = 0x6c, _d = 0x64, _e = 0x65, _colon = 0x3a;
+
+  Object decode() => switch (data[_pos]) {
+    _i => _int(),
+    _l => _list(),
+    _d => _dict(),
+    _ => _string(),
+  };
 
   int _int() {
-    _pos++; // 'i'
-    final start = _pos;
-    while (data[_pos] != 0x65) {
+    final start = ++_pos;
+    while (data[_pos] != _e) {
       _pos++;
     }
-    final value = int.parse(ascii.decode(data.sublist(start, _pos)));
-    _pos++; // 'e'
-    return value;
+    return int.parse(ascii.decode(Uint8List.sublistView(data, start, _pos++)));
   }
 
   Uint8List _string() {
-    var len = 0;
-    while (data[_pos] != 0x3a) {
-      // ':'
-      len = len * 10 + (data[_pos] - 0x30);
-      _pos++;
+    var length = 0;
+    while (data[_pos] != _colon) {
+      final digit = data[_pos++] - 0x30;
+      if (digit < 0 || digit > 9) {
+        throw const FormatException('Malformed bencode string length.');
+      }
+      length = length * 10 + digit;
     }
-    _pos++; // ':'
-    final bytes = data.sublist(_pos, _pos + len);
-    _pos += len;
-    return bytes;
+    final start = ++_pos;
+    _pos += length;
+    return data.sublist(start, _pos);
   }
 
   List<Object> _list() {
-    _pos++; // 'l'
+    _pos++;
     final list = <Object>[];
-    while (data[_pos] != 0x65) {
+    while (data[_pos] != _e) {
       list.add(decode());
     }
-    _pos++; // 'e'
+    _pos++;
     return list;
   }
 
   Map<String, Object> _dict() {
-    _pos++; // 'd'
+    final depth = _depth++;
+    _pos++;
     final map = <String, Object>{};
-    while (data[_pos] != 0x65) {
+    while (data[_pos] != _e) {
       final key = utf8.decode(_string(), allowMalformed: true);
-      final valueStart = _pos;
-      final value = decode();
-      if (key == 'info') {
-        infoStart = valueStart;
+      final start = _pos;
+      map[key] = decode();
+      if (depth == 0 && key == 'info') {
+        infoStart = start;
         infoEnd = _pos;
       }
-      map[key] = value;
     }
-    _pos++; // 'e'
+    _pos++;
+    _depth--;
     return map;
   }
+
+  var _depth = 0;
 }

@@ -10,13 +10,15 @@ class OrganizeCommand extends ArchivistCommand with SelectionCommand {
       ..addFlag(
         'folder-as-file',
         negatable: false,
-        help: 'Give each game its own folder (ES-DE folder-as-file). '
+        help:
+            'Give each game its own folder (ES-DE folder-as-file). '
             'Off = flat layout.',
       )
       ..addFlag(
         'extract',
         negatable: false,
-        help: 'Unzip archives. Off = keep the .zip as-is. '
+        help:
+            'Unzip archives. Off = keep the .zip as-is. '
             '(folder-as-file × extract) selects one of the 4 layout modes.',
       )
       ..addMultiOption(

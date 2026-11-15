@@ -27,7 +27,9 @@ void main() {
   late Directory tmp;
   const auditor = RomAuditor();
 
-  setUp(() async => tmp = await Directory.systemTemp.createTemp('minerva_lib_'));
+  setUp(
+    () async => tmp = await Directory.systemTemp.createTemp('minerva_lib_'),
+  );
   tearDown(() => tmp.deleteSync(recursive: true));
 
   File write(String relativePath, String content) {
@@ -38,22 +40,25 @@ void main() {
   }
 
   group('curated-folder detection', () {
-    test('a folder holding a dump plus content of your own is curated', () async {
-      write('Body Harvest (USA)/Body Harvest (USA).z64', 'body-harvest');
-      write('Body Harvest (USA)/translations/patch (T-Es).z64', 'patched');
-      write('Body Harvest (USA)/translations/readme.txt', 'notes');
+    test(
+      'a folder holding a dump plus content of your own is curated',
+      () async {
+        write('Body Harvest (USA)/Body Harvest (USA).z64', 'body-harvest');
+        write('Body Harvest (USA)/translations/patch (T-Es).z64', 'patched');
+        write('Body Harvest (USA)/translations/readme.txt', 'notes');
 
-      final dat = _dat([
-        _game('Body Harvest (USA)', [
-          _rom('Body Harvest (USA).z64', 'body-harvest'),
-        ]),
-      ]);
-      final report = await auditor.audit(dat: dat, romRoot: tmp);
+        final dat = _dat([
+          _game('Body Harvest (USA)', [
+            _rom('Body Harvest (USA).z64', 'body-harvest'),
+          ]),
+        ]);
+        final report = await auditor.audit(dat: dat, romRoot: tmp);
 
-      expect(report.library.curatedFolders, {'Body Harvest (USA)'});
-      expect(report.library.curatedGames, {'Body Harvest (USA)'});
-      expect(report.present.single.game.name, 'Body Harvest (USA)');
-    });
+        expect(report.library.curatedFolders, {'Body Harvest (USA)'});
+        expect(report.library.curatedGames, {'Body Harvest (USA)'});
+        expect(report.present.single.game.name, 'Body Harvest (USA)');
+      },
+    );
 
     test('a folder holding nothing but dumps is not curated', () async {
       write('Some Folder/Alpha (USA).z64', 'alpha');
@@ -75,7 +80,9 @@ void main() {
       write('Alpha (USA)/Alpha (USA).state1', 'state');
       write('Alpha (USA)/Alpha (USA).m3u', 'playlist');
 
-      final dat = _dat([_game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')])]);
+      final dat = _dat([
+        _game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')]),
+      ]);
       final report = await auditor.audit(dat: dat, romRoot: tmp);
 
       expect(report.library.curatedFolders, isEmpty);
@@ -85,7 +92,9 @@ void main() {
       write('Alpha (USA).z64', 'alpha');
       write('random-notes.txt', 'hello');
 
-      final dat = _dat([_game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')])]);
+      final dat = _dat([
+        _game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')]),
+      ]);
       final report = await auditor.audit(dat: dat, romRoot: tmp);
 
       expect(report.library.curatedFolders, isEmpty);
@@ -157,9 +166,14 @@ void main() {
 
       expect(moved.length, 1);
       expect(orphan.existsSync(), isFalse);
-      expect(File(p.join(tmp.path, '007 (Europe)', '007 (Europe).z64')).existsSync(), isTrue);
       expect(
-        File(p.join(tmp.path, '007 (Europe)', 'translations', '007 (T-Es).z64')).existsSync(),
+        File(p.join(tmp.path, '007 (Europe)', '007 (Europe).z64')).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(
+          p.join(tmp.path, '007 (Europe)', 'translations', '007 (T-Es).z64'),
+        ).existsSync(),
         isTrue,
       );
     });
@@ -176,13 +190,14 @@ void main() {
       final actions = await const EsdeRomOrganizer().organize(
         present: report.present,
         romRoot: tmp,
-        config: OrganizeConfig(
-          protectedFolders: report.library.curatedFolders,
-        ),
+        config: OrganizeConfig(protectedFolders: report.library.curatedFolders),
       );
 
       expect(actions.single.op, OrganizeOp.skippedProtected);
-      expect(File(p.join(tmp.path, '007 (Europe)', '007 (Europe).z64')).existsSync(), isTrue);
+      expect(
+        File(p.join(tmp.path, '007 (Europe)', '007 (Europe).z64')).existsSync(),
+        isTrue,
+      );
       expect(File(p.join(tmp.path, '007 (Europe).z64')).existsSync(), isFalse);
     });
 
@@ -205,7 +220,10 @@ void main() {
 
       expect(File(p.join(tmp.path, '007 (USA).z64')).existsSync(), isTrue);
       expect(File(p.join(tmp.path, '007 (Europe).z64')).existsSync(), isFalse);
-      expect(File(p.join(tmp.path, '.trash', '007 (Europe).z64')).existsSync(), isTrue);
+      expect(
+        File(p.join(tmp.path, '.trash', '007 (Europe).z64')).existsSync(),
+        isTrue,
+      );
     });
 
     test('a folder emptied by pruning goes with it', () async {
@@ -221,7 +239,9 @@ void main() {
 
       expect(Directory(p.join(tmp.path, '007 (Europe)')).existsSync(), isFalse);
       expect(
-        File(p.join(tmp.path, '.trash', '007 (Europe)', '007 (Europe).z64')).existsSync(),
+        File(
+          p.join(tmp.path, '.trash', '007 (Europe)', '007 (Europe).z64'),
+        ).existsSync(),
         isTrue,
       );
     });
@@ -232,42 +252,56 @@ void main() {
       _rom('Sagaia (Japan) (En).gb', 'sagaia'),
     ]);
 
-    test('a loose copy of a curated dump is pruned, the curated one kept', () async {
-      // Curation protects the folder, not the bytes in it.
-      write('Sagaia (Japan) (En)/Sagaia (Japan) (En).gb', 'sagaia');
-      write('Sagaia (Japan) (En)/translations/sagaia (T-Es).ips', 'patch');
-      write('Sagaia (Japan) (En).gb', 'sagaia');
+    test(
+      'a loose copy of a curated dump is pruned, the curated one kept',
+      () async {
+        // Curation protects the folder, not the bytes in it.
+        write('Sagaia (Japan) (En)/Sagaia (Japan) (En).gb', 'sagaia');
+        write('Sagaia (Japan) (En)/translations/sagaia (T-Es).ips', 'patch');
+        write('Sagaia (Japan) (En).gb', 'sagaia');
 
-      final report = await auditor.audit(dat: _dat([sagaia]), romRoot: tmp);
+        final report = await auditor.audit(dat: _dat([sagaia]), romRoot: tmp);
 
-      // Recognized, so not a stray; the duplication is what condemns it. The
-      // patch beside it is a stray, but a curated one, so it stays.
-      expect(
-        report.unknownFiles.map((f) => p.basename(f.path)),
-        isNot(contains('Sagaia (Japan) (En).gb')),
-      );
-      expect(
-        report.redundantFiles.map((f) => p.relative(f.path, from: tmp.path)),
-        ['Sagaia (Japan) (En).gb'],
-      );
+        // Recognized, so not a stray; the duplication is what condemns it. The
+        // patch beside it is a stray, but a curated one, so it stays.
+        expect(
+          report.unknownFiles.map((f) => p.basename(f.path)),
+          isNot(contains('Sagaia (Japan) (En).gb')),
+        );
+        expect(
+          report.redundantFiles.map((f) => p.relative(f.path, from: tmp.path)),
+          ['Sagaia (Japan) (En).gb'],
+        );
 
-      await const TrashPruner().prune(
-        report: report,
-        romRoot: tmp,
-        protectedFolders: report.library.curatedFolders,
-      );
+        await const TrashPruner().prune(
+          report: report,
+          romRoot: tmp,
+          protectedFolders: report.library.curatedFolders,
+        );
 
-      expect(File(p.join(tmp.path, 'Sagaia (Japan) (En).gb')).existsSync(), isFalse);
-      expect(
-        File(p.join(tmp.path, 'Sagaia (Japan) (En)', 'Sagaia (Japan) (En).gb')).existsSync(),
-        isTrue,
-      );
-      expect(
-        File(p.join(tmp.path, 'Sagaia (Japan) (En)', 'translations', 'sagaia (T-Es).ips'))
-            .existsSync(),
-        isTrue,
-      );
-    });
+        expect(
+          File(p.join(tmp.path, 'Sagaia (Japan) (En).gb')).existsSync(),
+          isFalse,
+        );
+        expect(
+          File(
+            p.join(tmp.path, 'Sagaia (Japan) (En)', 'Sagaia (Japan) (En).gb'),
+          ).existsSync(),
+          isTrue,
+        );
+        expect(
+          File(
+            p.join(
+              tmp.path,
+              'Sagaia (Japan) (En)',
+              'translations',
+              'sagaia (T-Es).ips',
+            ),
+          ).existsSync(),
+          isTrue,
+        );
+      },
+    );
 
     test('the curated copy wins however the disk was read', () async {
       // The root copy sorts first; the keeper must still be the curated one.
@@ -277,27 +311,28 @@ void main() {
 
       final report = await auditor.audit(dat: _dat([sagaia]), romRoot: tmp);
 
-      expect(
-        report.redundantFiles.map((f) => p.basename(f.path)),
-        ['AAA copy.gb'],
-      );
+      expect(report.redundantFiles.map((f) => p.basename(f.path)), [
+        'AAA copy.gb',
+      ]);
       expect(
         p.basename(report.present.single.location!.parent.path),
         'Sagaia (Japan) (En)',
       );
     });
 
-    test('with no folder curated the canonically-named copy keeps the slot', () async {
-      write('Sagaia (Japan) (En).gb', 'sagaia');
-      write('spare/whatever.gb', 'sagaia');
+    test(
+      'with no folder curated the canonically-named copy keeps the slot',
+      () async {
+        write('Sagaia (Japan) (En).gb', 'sagaia');
+        write('spare/whatever.gb', 'sagaia');
 
-      final report = await auditor.audit(dat: _dat([sagaia]), romRoot: tmp);
+        final report = await auditor.audit(dat: _dat([sagaia]), romRoot: tmp);
 
-      expect(
-        report.redundantFiles.map((f) => p.basename(f.path)),
-        ['whatever.gb'],
-      );
-    });
+        expect(report.redundantFiles.map((f) => p.basename(f.path)), [
+          'whatever.gb',
+        ]);
+      },
+    );
 
     test('two curated folders holding it are reported, never touched', () async {
       // Which set of patches to keep is a judgement about content, so both stay.
@@ -307,7 +342,9 @@ void main() {
       write('Ocarina FR/translations/oot (T-Fr).bps', 'patch-fr');
 
       final dat = _dat([
-        _game('Legend of Zelda (USA)', [_rom('Legend of Zelda (USA).z64', 'oot')]),
+        _game('Legend of Zelda (USA)', [
+          _rom('Legend of Zelda (USA).z64', 'oot'),
+        ]),
       ]);
       final report = await auditor.audit(dat: dat, romRoot: tmp);
 
@@ -320,8 +357,18 @@ void main() {
         romRoot: tmp,
         protectedFolders: report.library.curatedFolders,
       );
-      expect(File(p.join(tmp.path, 'Ocarina ES', 'Legend of Zelda (USA).z64')).existsSync(), isTrue);
-      expect(File(p.join(tmp.path, 'Ocarina FR', 'Legend of Zelda (USA).z64')).existsSync(), isTrue);
+      expect(
+        File(
+          p.join(tmp.path, 'Ocarina ES', 'Legend of Zelda (USA).z64'),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(
+          p.join(tmp.path, 'Ocarina FR', 'Legend of Zelda (USA).z64'),
+        ).existsSync(),
+        isTrue,
+      );
     });
 
     test('a copy condemned twice over is still listed once', () async {
@@ -344,23 +391,26 @@ void main() {
       );
     });
 
-    test('different dumps of one game in separate folders are not duplicates', () async {
-      // The Ocarina case the user actually curates: three regional dumps, each
-      // with its own translation. Different bytes, so nothing is redundant.
-      write('OoT USA/Zelda (USA).z64', 'us');
-      write('OoT USA/translations/a.bps', 'p1');
-      write('OoT Europe/Zelda (Europe).z64', 'eu');
-      write('OoT Europe/translations/b.bps', 'p2');
+    test(
+      'different dumps of one game in separate folders are not duplicates',
+      () async {
+        // The Ocarina case the user actually curates: three regional dumps, each
+        // with its own translation. Different bytes, so nothing is redundant.
+        write('OoT USA/Zelda (USA).z64', 'us');
+        write('OoT USA/translations/a.bps', 'p1');
+        write('OoT Europe/Zelda (Europe).z64', 'eu');
+        write('OoT Europe/translations/b.bps', 'p2');
 
-      final dat = _dat([
-        _game('Zelda (USA)', [_rom('Zelda (USA).z64', 'us')]),
-        _game('Zelda (Europe)', [_rom('Zelda (Europe).z64', 'eu')]),
-      ]);
-      final report = await auditor.audit(dat: dat, romRoot: tmp);
+        final dat = _dat([
+          _game('Zelda (USA)', [_rom('Zelda (USA).z64', 'us')]),
+          _game('Zelda (Europe)', [_rom('Zelda (Europe).z64', 'eu')]),
+        ]);
+        final report = await auditor.audit(dat: dat, romRoot: tmp);
 
-      expect(report.redundantFiles, isEmpty);
-      expect(report.library.curatedFolders, {'OoT USA', 'OoT Europe'});
-    });
+        expect(report.redundantFiles, isEmpty);
+        expect(report.library.curatedFolders, {'OoT USA', 'OoT Europe'});
+      },
+    );
   });
 
   group('in-place canonicalisation of curated folders', () {
@@ -386,29 +436,39 @@ void main() {
       expect(renamed.existsSync(), isTrue);
       // The user's own content moved with it, still beside the dump.
       expect(
-        File(p.join(renamed.path, 'translations', 'oot (T-Es).bps')).existsSync(),
+        File(
+          p.join(renamed.path, 'translations', 'oot (T-Es).bps'),
+        ).existsSync(),
         isTrue,
       );
     });
 
-    test('a ROM is renamed to its DAT name without leaving the folder', () async {
-      write('Alpha (USA)/whatever-i-called-it.z64', 'alpha');
-      write('Alpha (USA)/notes.txt', 'mine');
+    test(
+      'a ROM is renamed to its DAT name without leaving the folder',
+      () async {
+        write('Alpha (USA)/whatever-i-called-it.z64', 'alpha');
+        write('Alpha (USA)/notes.txt', 'mine');
 
-      final dat = _dat([_game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')])]);
-      final report = await auditor.audit(dat: dat, romRoot: tmp);
-      final actions = await const CuratedFolderRenamer().rename(
-        report: report,
-        romRoot: tmp,
-      );
+        final dat = _dat([
+          _game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')]),
+        ]);
+        final report = await auditor.audit(dat: dat, romRoot: tmp);
+        final actions = await const CuratedFolderRenamer().rename(
+          report: report,
+          romRoot: tmp,
+        );
 
-      expect(actions.every((a) => a.op == OrganizeOp.renamed), isTrue);
-      expect(
-        File(p.join(tmp.path, 'Alpha (USA)', 'Alpha (USA).z64')).existsSync(),
-        isTrue,
-      );
-      expect(File(p.join(tmp.path, 'Alpha (USA)', 'notes.txt')).existsSync(), isTrue);
-    });
+        expect(actions.every((a) => a.op == OrganizeOp.renamed), isTrue);
+        expect(
+          File(p.join(tmp.path, 'Alpha (USA)', 'Alpha (USA).z64')).existsSync(),
+          isTrue,
+        );
+        expect(
+          File(p.join(tmp.path, 'Alpha (USA)', 'notes.txt')).existsSync(),
+          isTrue,
+        );
+      },
+    );
 
     test('a folder holding two games keeps its name', () async {
       write('My Pair/Alpha (USA).z64', 'alpha');
@@ -433,7 +493,9 @@ void main() {
       write('mods/Alpha (USA).z64', 'alpha');
       write('mods/notes.txt', 'mine');
 
-      final dat = _dat([_game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')])]);
+      final dat = _dat([
+        _game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')]),
+      ]);
       final report = await auditor.audit(dat: dat, romRoot: tmp);
       final actions = await const CuratedFolderRenamer().rename(
         report: report,
@@ -450,7 +512,9 @@ void main() {
       write('Zelda/notes.txt', 'mine');
       write('Alpha (USA)/placeholder.txt', 'in the way');
 
-      final dat = _dat([_game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')])]);
+      final dat = _dat([
+        _game('Alpha (USA)', [_rom('Alpha (USA).z64', 'alpha')]),
+      ]);
       final report = await auditor.audit(dat: dat, romRoot: tmp);
       final actions = await const CuratedFolderRenamer().rename(
         report: report,

@@ -4,6 +4,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:path/path.dart' as p;
+
 import '../models/dat.dart';
 import '../models/metadata.dart';
 import 'enrichment.dart';
@@ -960,7 +962,9 @@ final class ScoringEngine {
           candidate.cloneListPriority ?? GameCandidate.defaultCloneListPriority,
       status: g.metadata.status,
       languageRank: config.languages.rank(g.metadata.languages),
-      languageCount: {for (final l in g.metadata.languages) l.split('-').first}.length,
+      languageCount: {
+        for (final l in g.metadata.languages) l.split('-').first,
+      }.length,
       regionRank: config.regions.rank(g.metadata.regions),
       modernRank: editions.modernRank(g.name),
       budgetRank: editions.budgetRank(g.name),
@@ -1125,9 +1129,10 @@ WishlistReach wishlistReach(
 /// Strips path, extension, parenthetical/bracket tags, and a trailing
 /// mod-suffix (`  - ...`), then normalizes.
 String _cleanBasename(String pathOrName) {
-  var basename = _percentDecoded(
-    pathOrName,
-  ).split(RegExp(r'[/\\]')).last.split('?').first;
+  var basename = p.windows
+      .basename(_percentDecoded(pathOrName))
+      .split('?')
+      .first;
 
   final lastDot = basename.lastIndexOf('.');
   if (lastDot > 0 && basename.length - lastDot <= 5) {

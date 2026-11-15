@@ -61,7 +61,7 @@ final class DatMirror {
       final local = <String, List<File>>{};
       if (await dir.exists()) {
         await for (final file in dir.list()) {
-          if (file is! File || !file.path.toLowerCase().endsWith('.dat')) {
+          if (file is! File || p.extension(file.path).toLowerCase() != '.dat') {
             continue;
           }
           final key = SystemNameResolver.normalizeKey(_systemOf(file.path));

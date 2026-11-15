@@ -1,85 +1,95 @@
-/// MiNERVA Archive access.
+/// MiNERVA Archive access: platform torrents and swarm health.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-import 'torrent.dart';
-
-const kMinervaBaseUrl = 'https://minerva-archive.org';
-
-/// Resolves MiNERVA Archive collections/platforms to their platform-wide
-/// torrents (the `/browse` + `/rom` surface).
-abstract interface class ArchiveSource {
-  Future<List<String>> listCollections();
-
-  Future<List<String>> listPlatforms(String collection);
-
-  Future<PlatformTorrentRef> resolvePlatform(String collection, String platform);
-
-  Future<Uint8List> fetchTorrentFile(PlatformTorrentRef ref);
-}
-
-/// Resolves MiNERVA Archive platforms to their platform-wide torrents.
-///
-/// Torrent files follow the pattern
-/// `/assets/<version>/Minerva_Myrient - <collection> - <platform>.torrent`,
-/// and the internal layout is `Minerva_Myrient/<collection>/<platform>/`.
-final class MinervaArchiveSource implements ArchiveSource {
-  MinervaArchiveSource({
-    this.baseUrl = kMinervaBaseUrl,
-    this.assetVersion = 'Minerva_Myrient_v0.3',
+/// Resolves a MiNERVA platform to its torrent. Every platform is one torrent
+/// holding `Minerva_Myrient/<collection>/<platform>/<game>.zip`.
+final class MinervaArchive {
+  MinervaArchive({
+    this.baseUrl = 'https://minerva-archive.org',
+    this.release = 'Minerva_Myrient_v0.3',
+    this.timeout = const Duration(seconds: 60),
     http.Client? client,
   }) : _http = client ?? http.Client();
 
   final String baseUrl;
-  final String assetVersion;
+
+  /// The `/assets/` folder tried first; a newer one is discovered when it 404s.
+  final String release;
+  final Duration timeout;
   final http.Client _http;
 
-  @override
-  Future<List<String>> listCollections() async =>
-      _dirNames((await _http.get(Uri.parse('$baseUrl/browse/'))).body);
-
-  @override
-  Future<List<String>> listPlatforms(String collection) async => _dirNames(
-    (await _http.get(
-      Uri.parse('$baseUrl/browse/${Uri.encodeComponent(collection)}/'),
-    )).body,
-  );
-
-  @override
-  Future<PlatformTorrentRef> resolvePlatform(
-    String collection,
-    String platform,
-  ) async {
-    final file = 'Minerva_Myrient - $collection - $platform.torrent';
-    return PlatformTorrentRef(
-      collection: collection,
-      platform: platform,
-      torrentUri: Uri.parse(
-        '$baseUrl/assets/$assetVersion/${Uri.encodeComponent(file)}',
-      ),
-      magnetUri: Uri.parse('magnet:?dn=${Uri.encodeComponent(platform)}'),
-      internalPathPrefix: 'Minerva_Myrient/$collection/$platform/',
+  /// The `.torrent` of [platform] in [collection] (`No-Intro`, `Redump`).
+  ///
+  /// Throws [HttpException] when the archive does not publish one.
+  Future<Uint8List> platformTorrent(String collection, String platform) async {
+    final file = Uri.encodeComponent(
+      'Minerva_Myrient - $collection - $platform.torrent',
     );
+    final known = await _get('$baseUrl/assets/$release/$file');
+    if (known.statusCode == 200) return known.bodyBytes;
+
+    final discovered = await _discoverTorrentUrl(collection, platform);
+    if (discovered == null) {
+      throw HttpException('No torrent published for $collection / $platform.');
+    }
+    final response = await _get(discovered);
+    if (response.statusCode != 200) {
+      throw HttpException('HTTP ${response.statusCode} for $discovered');
+    }
+    return response.bodyBytes;
   }
 
-  @override
-  Future<Uint8List> fetchTorrentFile(PlatformTorrentRef ref) async {
-    final resp = await _http.get(ref.torrentUri);
-    if (resp.statusCode != 200) {
-      throw HttpException('HTTP ${resp.statusCode} for ${ref.torrentUri}');
+  /// Seeders the archive's tracker reports for [infoHash], or null when the
+  /// torrent is not listed or the dashboard is unreachable.
+  Future<int?> seeders(String infoHash) async {
+    try {
+      final response = await _get('$baseUrl/v1/api/dashboard/latest');
+      if (response.statusCode != 200) return null;
+      if (jsonDecode(response.body) case {'torrents': final List torrents}) {
+        for (final torrent in torrents) {
+          if (torrent case {
+            'info_hash': final String hash,
+            'seeders': final int seeders,
+          } when hash.toLowerCase() == infoHash) {
+            return seeders;
+          }
+        }
+      }
+    } on Exception {
+      // Health is advisory.
     }
-    return resp.bodyBytes;
+    return null;
   }
 
   void close() => _http.close();
 
-  /// Extracts directory display names from a `/browse` listing page.
-  List<String> _dirNames(String html) => [
-    for (final m in RegExp(r'data-name="([^"]*)"').allMatches(html))
-      if ((m.group(1) ?? '').isNotEmpty) m.group(1)!,
-  ];
+  /// Follows the platform listing to any file page, which links the torrent.
+  Future<String?> _discoverTorrentUrl(
+    String collection,
+    String platform,
+  ) async {
+    final listing = await _get(
+      '$baseUrl/browse/${Uri.encodeComponent(collection)}/'
+      '${Uri.encodeComponent(platform)}/',
+    );
+    final romPage = _romLink.firstMatch(listing.body)?.group(1);
+    if (romPage == null) return null;
+    final page = await _get('$baseUrl$romPage');
+    final href = _torrentLink.firstMatch(page.body)?.group(1);
+    return href == null
+        ? null
+        : Uri.parse(baseUrl).resolve(Uri.encodeFull(href)).toString();
+  }
+
+  Future<http.Response> _get(String url) =>
+      _http.get(Uri.parse(url)).timeout(timeout);
+
+  static final _romLink = RegExp(r'href="(/rom\?id=\d+)"');
+  static final _torrentLink = RegExp(r'href="(/assets/[^"]+\.torrent)"');
 }

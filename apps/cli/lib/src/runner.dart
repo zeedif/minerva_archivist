@@ -7,7 +7,6 @@ import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 
 import 'commands/audit_command.dart';
-import 'commands/download_command.dart';
 import 'commands/filter_command.dart';
 import 'commands/m3u_command.dart';
 import 'commands/organize_command.dart';
@@ -26,7 +25,6 @@ Future<int> runCli(List<String> args) async {
         ..addCommand(SyncCommand())
         ..addCommand(AuditCommand())
         ..addCommand(FilterCommand())
-        ..addCommand(DownloadCommand())
         ..addCommand(OrganizeCommand())
         ..addCommand(M3uCommand())
         ..addCommand(PruneCommand())

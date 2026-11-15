@@ -304,8 +304,9 @@ final class RemoteMetadataRepository implements MetadataRepository {
         try {
           final local = File(p.join(cacheDir, folder, name));
           if (!force && await local.exists()) {
-            final actual =
-                crypto.sha256.convert(await local.readAsBytes()).toString();
+            final actual = crypto.sha256
+                .convert(await local.readAsBytes())
+                .toString();
             if (actual == manifest[name]) {
               upToDate++;
               continue;
@@ -319,8 +320,9 @@ final class RemoteMetadataRepository implements MetadataRepository {
       }
     }
 
-    final workerCount =
-        files.isEmpty ? 0 : (files.length < 8 ? files.length : 8);
+    final workerCount = files.isEmpty
+        ? 0
+        : (files.length < 8 ? files.length : 8);
     await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
     return (downloaded: downloaded, upToDate: upToDate, errors: errors);
   }
@@ -520,7 +522,10 @@ final class RemoteMetadataRepository implements MetadataRepository {
   // --- fetching + caching ---
 
   String _urlFor(String relativePath) {
-    final encoded = relativePath.split('/').map(Uri.encodeComponent).join('/');
+    final encoded = p.posix
+        .split(relativePath)
+        .map(Uri.encodeComponent)
+        .join('/');
     return '$baseUrl/$encoded';
   }
 
@@ -529,7 +534,9 @@ final class RemoteMetadataRepository implements MetadataRepository {
     if (resp.statusCode != 200) {
       throw HttpException('HTTP ${resp.statusCode} for $relativePath');
     }
-    final local = File(p.join(cacheDir, p.joinAll(relativePath.split('/'))));
+    final local = File(
+      p.join(cacheDir, p.joinAll(p.posix.split(relativePath))),
+    );
     await local.parent.create(recursive: true);
     await local.writeAsBytes(resp.bodyBytes);
     return resp.bodyBytes;
@@ -645,7 +652,9 @@ final class RemoteMetadataRepository implements MetadataRepository {
 
     // Extract the primary code from a language regex ("En(?:-[A-Z][A-Z])?" -> "En").
     String primaryCode(String regex) =>
-        RegExp(r'^([A-Za-z]{2}(?:-[A-Za-z]{2,4})?)').firstMatch(regex)?.group(1) ??
+        RegExp(
+          r'^([A-Za-z]{2}(?:-[A-Za-z]{2,4})?)',
+        ).firstMatch(regex)?.group(1) ??
         regex;
 
     // defaultRegionOrder is an ORDERED object: key order = priority; each value
@@ -657,7 +666,9 @@ final class RemoteMetadataRepository implements MetadataRepository {
       regRaw.forEach((region, v) {
         final name = region.toString();
         regionOrder.add(name);
-        final impliedName = v is Map ? (v['impliedLanguage']?.toString() ?? '') : '';
+        final impliedName = v is Map
+            ? (v['impliedLanguage']?.toString() ?? '')
+            : '';
         if (impliedName.isNotEmpty && languages.containsKey(impliedName)) {
           regionImplied[name] = [primaryCode(languages[impliedName]!)];
         }

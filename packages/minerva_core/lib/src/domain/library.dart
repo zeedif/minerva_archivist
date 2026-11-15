@@ -104,9 +104,7 @@ final class LibraryIndex {
   /// Games held outright inside a curated folder. These are settled: the dump is
   /// there, the user has built on it, and no other dump of the same game should
   /// be fetched to sit beside it.
-  Set<String> get curatedGames => {
-    for (final e in curated) ...e.completeGames,
-  };
+  Set<String> get curatedGames => {for (final e in curated) ...e.completeGames};
 
   /// Games held outright anywhere in the root, curated or not.
   Set<String> get completeGames => {
@@ -150,7 +148,15 @@ final class LibraryIndexBuilder {
   /// the conservative reading — being wrong here only means leaving a folder
   /// alone.
   static const _incidentalExtensions = {
-    '.m3u', '.srm', '.sav', '.cht', '.rtc', '.mcr', '.rdb', '.dat', '.xml',
+    '.m3u',
+    '.srm',
+    '.sav',
+    '.cht',
+    '.rtc',
+    '.mcr',
+    '.rdb',
+    '.dat',
+    '.xml',
     '.sfv',
   };
 

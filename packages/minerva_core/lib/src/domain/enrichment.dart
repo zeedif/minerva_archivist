@@ -44,7 +44,8 @@ final class DatEnricher {
       }
       if (languages.isEmpty) {
         for (final r in effectiveRegions) {
-          for (final code in config.regionImpliedLanguages[r] ?? const <String>[]) {
+          for (final code
+              in config.regionImpliedLanguages[r] ?? const <String>[]) {
             if (!languages.contains(code)) languages.add(code);
           }
         }

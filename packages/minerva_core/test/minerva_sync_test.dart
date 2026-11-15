@@ -188,7 +188,9 @@ void main() {
           // not that dump merely for sharing the title.
           final regionTagged = RetroAchievementsIndex(
             'Sony - PlayStation Portable',
-            const [RetroAchievementsEntry(name: 'Sequel (Europe)', sha1: 'stale')],
+            const [
+              RetroAchievementsEntry(name: 'Sequel (Europe)', sha1: 'stale'),
+            ],
           );
           final config = InternalConfig(
             cloneListMetadataUrl: Uri.parse('https://example.invalid'),

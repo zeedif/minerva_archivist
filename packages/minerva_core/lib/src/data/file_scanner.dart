@@ -41,9 +41,13 @@ final class DirectoryFileScanner implements FileScanner {
     Set<String>? extensions,
   }) async* {
     if (!await root.exists()) return;
-    await for (final entity in root.list(recursive: recursive, followLinks: false)) {
+    await for (final entity in root.list(
+      recursive: recursive,
+      followLinks: false,
+    )) {
       if (entity is! File) continue;
-      if (extensions != null && !extensions.contains(p.extension(entity.path).toLowerCase())) {
+      if (extensions != null &&
+          !extensions.contains(p.extension(entity.path).toLowerCase())) {
         continue;
       }
       final stat = await entity.stat();
@@ -168,12 +172,12 @@ final class StreamingHasher implements Hasher {
     bool sha1 = true,
     bool sha256 = false,
   }) async {
-    if (!archive.path.toLowerCase().endsWith('.zip')) return const {};
+    if (p.extension(archive.path).toLowerCase() != '.zip') return const {};
     final bytes = await archive.readAsBytes();
     final decoded = ZipDecoder().decodeBytes(bytes);
     final result = <String, FileHashes>{};
     for (final entry in decoded) {
-      if (entry.name.endsWith('/')) continue;
+      if (!entry.isFile) continue;
       final data = entry.readBytes();
       if (data == null) continue;
       result[entry.name] = _fromBytes(

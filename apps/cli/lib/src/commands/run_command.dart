@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:minerva_core/minerva_core.dart';
-import 'package:args/args.dart';
 import 'package:path/path.dart' as p;
 
 import '../runner.dart';
@@ -12,7 +11,8 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
     argParser
       ..addMultiOption(
         'only',
-        help: 'Run only these stages '
+        help:
+            'Run only these stages '
             '(sync, select, audit, download, organize, m3u, prune).',
       )
       ..addMultiOption('skip', help: 'Skip these stages.')
@@ -36,9 +36,7 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
         'apply',
         negatable: false,
         help: 'Apply organize/prune/download (default is a dry run).',
-      )
-      ..addOption('aria2', defaultsTo: 'aria2c', help: 'Path to aria2c.')
-      ..addFlag('seed', negatable: false, help: 'Keep seeding after download.');
+      );
     argParser.addSelectionFlags();
   }
 
@@ -91,7 +89,9 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
 
     for (final path in paths) {
       for (final dat in await loader.loadPath(path)) {
-        stdout.writeln('\n=== ${dat.header.name} [${dat.header.flavor.name}] ===');
+        stdout.writeln(
+          '\n=== ${dat.header.name} [${dat.header.flavor.name}] ===',
+        );
 
         var target = dat;
         SelectedTarget? selected;
@@ -107,7 +107,8 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
         }
 
         final root = romRoot == null ? null : Directory(romRoot!);
-        final needsReport = root != null &&
+        final needsReport =
+            root != null &&
             (active('audit') ||
                 active('download') ||
                 active('organize') ||
@@ -136,9 +137,15 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
               : target.games;
           if (report != null && selected != null) {
             final settled = selected.settledByCuratedGroup(report);
-            final held = [for (final g in wanted) if (settled.contains(g.name)) g];
+            final held = [
+              for (final g in wanted)
+                if (settled.contains(g.name)) g,
+            ];
             if (held.isNotEmpty) {
-              wanted = [for (final g in wanted) if (!settled.contains(g.name)) g];
+              wanted = [
+                for (final g in wanted)
+                  if (!settled.contains(g.name)) g,
+              ];
               stdout.writeln(
                 '[download] ${held.length} skipped: another dump of the same '
                 'game is already settled in a curated folder',
@@ -148,7 +155,7 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
               }
             }
           }
-          fetched = await _download(dat, wanted, romRoot, apply, r);
+          fetched = await _download(dat, wanted, romRoot, apply);
           // Re-audit so organize/m3u/prune see the freshly flattened files.
           if (fetched.isNotEmpty && root != null) {
             report = await auditor.audit(
@@ -195,7 +202,9 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
             dryRun: !apply,
           );
           final all = [...actions, ...renames];
-          stdout.writeln('[organize] ${all.summary}${apply ? "" : " (dry run)"}');
+          stdout.writeln(
+            '[organize] ${all.summary}${apply ? "" : " (dry run)"}',
+          );
           for (final f in all.where((a) => a.op == OrganizeOp.failed)) {
             stderr.writeln('           ! ${f.game}: ${f.error}');
           }
@@ -206,7 +215,9 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
             romRoot: root,
             dryRun: !apply,
           );
-          stdout.writeln('[m3u] ${written.length} playlist(s)${apply ? "" : " (dry run)"}');
+          stdout.writeln(
+            '[m3u] ${written.length} playlist(s)${apply ? "" : " (dry run)"}',
+          );
         }
         if (report != null && root != null && active('prune')) {
           final moved = await const TrashPruner().prune(
@@ -218,11 +229,15 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
             keep: {for (final f in fetched) p.canonicalize(f.path)},
             dryRun: !apply,
           );
-          stdout.writeln('[prune] ${moved.length} orphan(s)${apply ? "" : " (dry run)"}');
+          stdout.writeln(
+            '[prune] ${moved.length} orphan(s)${apply ? "" : " (dry run)"}',
+          );
           // Named, not just counted: a wrong move has to be visible in the run
           // that made it rather than in a later directory listing.
           for (final f in moved) {
-            stdout.writeln('           - ${p.relative(f.path, from: p.join(root.path, trashFolderName))}');
+            stdout.writeln(
+              '           - ${p.relative(f.path, from: p.join(root.path, trashFolderName))}',
+            );
           }
           final twinned = report.duplicatesInCuratedFolders(root);
           if (twinned.isNotEmpty) {
@@ -231,93 +246,95 @@ class RunCommand extends ArchivistCommand with SelectionCommand {
               'folders — merge them by hand to drop the extra copy:',
             );
             for (final f in twinned) {
-              stdout.writeln('           = ${p.relative(f.path, from: root.path)}');
+              stdout.writeln(
+                '           = ${p.relative(f.path, from: root.path)}',
+              );
             }
           }
         }
       }
     }
     repo.close();
-    return 0;
+    return _failed ? 1 : 0;
   }
 
   /// The files a completed download just landed in the ROM root, empty when
-  /// nothing was fetched (so the caller knows to skip the re-audit).
+  /// nothing was fetched.
   Future<List<File>> _download(
     DatFile dat,
     Iterable<DatGame> wanted,
     String? romRoot,
     bool apply,
-    ArgResults r,
   ) async {
     final collection = switch (dat.header.flavor) {
       DatFlavor.redump || DatFlavor.mameRedump => 'Redump',
       _ => 'No-Intro',
     };
     final platform = const SystemNameResolver().baseSystem(dat.header.name);
-    final source = MinervaArchiveSource();
+    final archive = MinervaArchive();
+    final engine = LibtorrentEngine();
     try {
-      final ref = await source.resolvePlatform(collection, platform);
-      final bytes = await source.fetchTorrentFile(ref);
-      final manifest = await const BencodeTorrentInspector().read(bytes);
-      final plan = const DownloadPlanner().plan(wanted, manifest);
-      final wantedCount = wanted.length;
+      final torrent = await archive.platformTorrent(collection, platform);
+      final manifest = TorrentManifest.parse(torrent);
+      final plan = DownloadPlan.match(wanted, manifest);
       stdout.writeln(
-        '[download] $wantedCount missing -> ${plan.selectedFiles.length} in torrent'
+        '[download] ${wanted.length} missing -> ${plan.selected.length} in torrent'
         '${plan.unmatched.isEmpty ? "" : ", ${plan.unmatched.length} not distributed"}'
-        ', ${(plan.totalBytes / 1048576).toStringAsFixed(1)} MB'
-        '${apply ? "" : " (dry run)"}',
+        ', ${_mb(plan.totalBytes)}${apply ? "" : " (dry run)"}',
       );
-      for (final u in plan.unmatched) {
-        stdout.writeln('           ? not in torrent: $u');
+      for (final name in plan.unmatched) {
+        stdout.writeln('           ? not in torrent: $name');
       }
-      if (!apply || plan.selectedFiles.isEmpty) return const [];
+      if (!apply || plan.selected.isEmpty) return const [];
 
-      final saveDir = Directory(romRoot ?? Directory.current.path);
-      final client = Aria2TorrentClient(aria2Path: r.option('aria2')!);
-      var completed = false;
-      try {
-        await client.start();
-        final handle = await client.add(
-          TorrentAddRequest(
-            torrentData: bytes,
-            saveDirectory: saveDir.path,
-            selectedFileIndices: plan.selectedIndices,
-            seedAfterComplete: r.flag('seed'),
-          ),
-        );
-        await for (final progress in client.watch(handle)) {
-          if (progress.state == TorrentState.completed) {
-            completed = true;
-            break;
+      if (await archive.seeders(manifest.infoHash) case final seeders?) {
+        stdout.writeln('[download] $seeders seeder(s) reported');
+      }
+      final root = Directory(romRoot ?? Directory.current.path);
+      final incoming = Directory(
+        p.join(root.path, workFolderName, incomingFolderName),
+      );
+      final reported = <int>{};
+      await for (final snapshot in engine.fetch(
+        FetchRequest(torrent: torrent, into: incoming, files: plan.files),
+      )) {
+        for (final file in snapshot.files) {
+          if (file.isComplete && reported.add(file.index)) {
+            stdout.writeln('\r           + ${file.name}'.padRight(79));
           }
-          if (progress.state == TorrentState.error) break;
         }
-      } finally {
-        await client.dispose();
+        final active = snapshot.files
+            .where((f) => !f.isComplete && f.done > 0)
+            .firstOrNull;
+        final line =
+            '           ${reported.length}/${snapshot.files.length}  '
+            '${_mb(snapshot.done)}/${_mb(snapshot.total)}  '
+            '${_mb(snapshot.bytesPerSecond)}/s  ${snapshot.seeds} seeds'
+            '${active == null ? "" : "  ${(active.fraction * 100).toStringAsFixed(0)}% ${active.name}"}';
+        stdout.write('\r${line.padRight(79).substring(0, 79)}');
       }
+      stdout.writeln();
 
-      if (!completed) return const [];
-
-      final keep = {
-        for (final f in plan.selectedFiles) f.path.split('/').last.toLowerCase(),
-      };
-      final result = await const TorrentRelocator().flatten(
-        romRoot: saveDir,
-        topDir: manifest.name,
-        keepBasenames: keep,
-      );
-      stdout.writeln(
-        '[download] flattened ${result.moved.length} selected, '
-        'discarded ${result.discarded} boundary file(s); '
-        'removed ${result.removedControlFiles} control file(s).',
-      );
-      return result.moved;
-    } catch (e) {
-      stderr.writeln('[download] failed: $e');
+      final landed = <File>[];
+      for (final name in plan.files.values) {
+        final destination = File(p.join(root.path, name));
+        if (await destination.exists()) await destination.delete();
+        landed.add(
+          await File(p.join(incoming.path, name)).rename(destination.path),
+        );
+      }
+      return landed;
+    } on Exception catch (e) {
+      stderr.writeln('\n[download] failed: $e');
+      _failed = true;
       return const [];
     } finally {
-      source.close();
+      engine.close();
+      archive.close();
     }
   }
+
+  var _failed = false;
+
+  static String _mb(int bytes) => '${(bytes / 1048576).toStringAsFixed(1)} MB';
 }

@@ -10,10 +10,8 @@ import 'package:test/test.dart';
 
 /// A stable 8-hex-digit stand-in for a ROM's CRC32, so a title's DAT entry and
 /// its RetroAchievements entry join without hardcoding digests.
-String crcOf(String title) => crypto.md5
-    .convert(utf8.encode(title))
-    .toString()
-    .substring(0, 8);
+String crcOf(String title) =>
+    crypto.md5.convert(utf8.encode(title)).toString().substring(0, 8);
 
 void main() {
   late Directory cache;
@@ -217,25 +215,32 @@ void main() {
       expect(ra!.supportsGame(game('Zelda no Densetsu')), isTrue);
     });
 
-    test('a name match that describes the DAT is never second-guessed', () async {
-      // The bigger file would win a hash count, but the named one already
-      // covers the DAT, so no content search runs.
-      folder({
-        'Sony PlayStation.json': raFile(['Ridge Racer']),
-        'Nintendo - Game Boy.json': raFile(['Ridge Racer', 'Tetris', 'Mario']),
-      });
-      final repo = RemoteMetadataRepository(
-        cacheDir: cache.path,
-        client: offline(),
-      );
-      addTearDown(repo.close);
+    test(
+      'a name match that describes the DAT is never second-guessed',
+      () async {
+        // The bigger file would win a hash count, but the named one already
+        // covers the DAT, so no content search runs.
+        folder({
+          'Sony PlayStation.json': raFile(['Ridge Racer']),
+          'Nintendo - Game Boy.json': raFile([
+            'Ridge Racer',
+            'Tetris',
+            'Mario',
+          ]),
+        });
+        final repo = RemoteMetadataRepository(
+          cacheDir: cache.path,
+          client: offline(),
+        );
+        addTearDown(repo.close);
 
-      final ra = await repo.retroAchievements(
-        'Sony - PlayStation',
-        dat: dat(['Ridge Racer', 'Tetris']),
-      );
-      expect(ra!.supportsGame(game('Tetris')), isFalse);
-    });
+        final ra = await repo.retroAchievements(
+          'Sony - PlayStation',
+          dat: dat(['Ridge Racer', 'Tetris']),
+        );
+        expect(ra!.supportsGame(game('Tetris')), isFalse);
+      },
+    );
 
     test('a same-manufacturer file wins before the folder is swept', () async {
       // The unrelated file matches more titles, but the search only reaches it
@@ -281,27 +286,32 @@ void main() {
       expect(ra!.supportsGame(game('Tetris')), isTrue);
     });
 
-    test('sweeps the rest of the folder when nothing related matches', () async {
-      folder({
-        'Nintendo - Game Boy.json': raFile(['Tetris']),
-        'NEC PC-8000-8800.json': raFile(['Thexder']),
-      });
-      final repo = RemoteMetadataRepository(
-        cacheDir: cache.path,
-        client: offline(),
-      );
-      addTearDown(repo.close);
+    test(
+      'sweeps the rest of the folder when nothing related matches',
+      () async {
+        folder({
+          'Nintendo - Game Boy.json': raFile(['Tetris']),
+          'NEC PC-8000-8800.json': raFile(['Thexder']),
+        });
+        final repo = RemoteMetadataRepository(
+          cacheDir: cache.path,
+          client: offline(),
+        );
+        addTearDown(repo.close);
 
-      final ra = await repo.retroAchievements(
-        'Hudson - Whatever',
-        dat: dat(['Thexder']),
-      );
-      expect(ra, isNotNull);
-      expect(ra!.supportsGame(game('Thexder')), isTrue);
-    });
+        final ra = await repo.retroAchievements(
+          'Hudson - Whatever',
+          dat: dat(['Thexder']),
+        );
+        expect(ra, isNotNull);
+        expect(ra!.supportsGame(game('Thexder')), isTrue);
+      },
+    );
 
     test('an uncovered system still resolves to null', () async {
-      folder({'Nintendo - Game Boy.json': raFile(['Tetris'])});
+      folder({
+        'Nintendo - Game Boy.json': raFile(['Tetris']),
+      });
       final repo = RemoteMetadataRepository(
         cacheDir: cache.path,
         client: offline(),

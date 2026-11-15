@@ -14,7 +14,10 @@ Uint8List _fakeChdV5Header({required String sha1, required String rawSha1}) {
   ByteData.view(header.buffer).setUint32(12, 5);
   void putHex(int offset, String hex) {
     for (var i = 0; i < 20; i++) {
-      header[offset + i] = int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16);
+      header[offset + i] = int.parse(
+        hex.substring(i * 2, i * 2 + 2),
+        radix: 16,
+      );
     }
   }
 
@@ -150,7 +153,8 @@ void main() {
     // real digest could match, and suppressed the CRC fallback it needed — so
     // a correct file was reported unknown and pruned into .trash.
     test('blank hash attributes are parsed as absent, not as ""', () async {
-      final datFile = File('${tmp.path}/blank.dat')..writeAsStringSync('''
+      final datFile = File('${tmp.path}/blank.dat')
+        ..writeAsStringSync('''
 <?xml version="1.0"?>
 <datafile>
   <header><name>Blank - Hashes</name><url>https://www.no-intro.org</url></header>
@@ -226,21 +230,24 @@ void main() {
       const helloSha1 = 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d';
       const worldSha1 = '7c211433f02071597741e6ff5a8ea34789abbf43';
 
-      DatGame title(String name, String sha1, {Set<String> raDumps = const {}}) =>
-          DatGame(
-            name: name,
-            roms: [
-              RomEntry(
-                name: '$name.min',
-                size: 5,
-                format: RomFormat.cartridge,
-                sha1: sha1,
-              ),
-            ],
-            metadata: const GameMetadata(),
-            retroAchievements: raDumps.isEmpty ? RaMatch.none : RaMatch.byName,
-            raDumps: raDumps,
-          );
+      DatGame title(
+        String name,
+        String sha1, {
+        Set<String> raDumps = const {},
+      }) => DatGame(
+        name: name,
+        roms: [
+          RomEntry(
+            name: '$name.min',
+            size: 5,
+            format: RomFormat.cartridge,
+            sha1: sha1,
+          ),
+        ],
+        metadata: const GameMetadata(),
+        retroAchievements: raDumps.isEmpty ? RaMatch.none : RaMatch.byName,
+        raDumps: raDumps,
+      );
 
       DatFile datOf(List<DatGame> games) => DatFile(
         header: const DatHeader(name: 'T', flavor: DatFlavor.noIntro),
@@ -250,7 +257,9 @@ void main() {
       test('settles a missing game and is not pruned', () async {
         File('${tmp.path}/Rehashed (Japan).min').writeAsStringSync('hello');
         final report = await const RomAuditor().audit(
-          dat: datOf([title('Rehashed (Japan)', 'dead', raDumps: {helloSha1})]),
+          dat: datOf([
+            title('Rehashed (Japan)', 'dead', raDumps: {helloSha1}),
+          ]),
           romRoot: tmp,
         );
         expect(report.present.single.game.name, 'Rehashed (Japan)');
@@ -293,12 +302,13 @@ void main() {
     // see ChdHeader.
     group('CHD header identity', () {
       test('ChdHeader.read parses the embedded v5 hashes', () async {
-        final f = File('${tmp.path}/probe.chd')..writeAsBytesSync(
-          _fakeChdV5Header(
-            sha1: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-            rawSha1: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-          ),
-        );
+        final f = File('${tmp.path}/probe.chd')
+          ..writeAsBytesSync(
+            _fakeChdV5Header(
+              sha1: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              rawSha1: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            ),
+          );
         final header = await ChdHeader.read(f);
         expect(header, isNotNull);
         expect(header!.version, 5);
@@ -311,7 +321,10 @@ void main() {
         File('${tmp.path}/Some Game (Japan).chd').writeAsBytesSync(
           _fakeChdV5Header(
             sha1: '306b65cb7fa6fb4f15d1b093d01f9d3f92e4a153',
-            rawSha1: '0000000000000000000000000000000000000000'.substring(0, 40),
+            rawSha1: '0000000000000000000000000000000000000000'.substring(
+              0,
+              40,
+            ),
           ),
         );
         final dat = DatFile(
@@ -338,40 +351,47 @@ void main() {
         expect(report.present.single.foundFormat, RomFormat.chd);
       });
 
-      test('completes a raw Redump entry via the CHD raw-payload hash, and '
-          'the extension mismatch this implies is not flagged wrongName', () async {
-        File('${tmp.path}/Ape Escape (Europe).chd').writeAsBytesSync(
-          _fakeChdV5Header(
-            sha1: '0000000000000000000000000000000000000000'.substring(0, 40),
-            rawSha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
-          ),
-        );
-        final dat = DatFile(
-          header: const DatHeader(name: 'T', flavor: DatFlavor.redump),
-          games: const [
-            DatGame(
-              name: 'Ape Escape (Europe)',
-              roms: [
-                RomEntry(
-                  name: 'Ape Escape (Europe).iso',
-                  size: 801603584,
-                  format: RomFormat.raw,
-                  sha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
-                ),
-              ],
-              metadata: GameMetadata(),
+      test(
+        'completes a raw Redump entry via the CHD raw-payload hash, and '
+        'the extension mismatch this implies is not flagged wrongName',
+        () async {
+          File('${tmp.path}/Ape Escape (Europe).chd').writeAsBytesSync(
+            _fakeChdV5Header(
+              sha1: '0000000000000000000000000000000000000000'.substring(0, 40),
+              rawSha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
             ),
-          ],
-        );
+          );
+          final dat = DatFile(
+            header: const DatHeader(name: 'T', flavor: DatFlavor.redump),
+            games: const [
+              DatGame(
+                name: 'Ape Escape (Europe)',
+                roms: [
+                  RomEntry(
+                    name: 'Ape Escape (Europe).iso',
+                    size: 801603584,
+                    format: RomFormat.raw,
+                    sha1: 'de4aac9bce0481c92fe3e46fece27740f6f02247',
+                  ),
+                ],
+                metadata: GameMetadata(),
+              ),
+            ],
+          );
 
-        final report = await const RomAuditor().audit(dat: dat, romRoot: tmp);
-        expect(report.present.length, 1, reason: 'the .chd must be recognized');
-        expect(report.present.single.foundFormat, RomFormat.chd);
-        expect(
-          report.results.every((r) => r.status != RomStatus.wrongName),
-          isTrue,
-        );
-      });
+          final report = await const RomAuditor().audit(dat: dat, romRoot: tmp);
+          expect(
+            report.present.length,
+            1,
+            reason: 'the .chd must be recognized',
+          );
+          expect(report.present.single.foundFormat, RomFormat.chd);
+          expect(
+            report.results.every((r) => r.status != RomStatus.wrongName),
+            isTrue,
+          );
+        },
+      );
 
       test('matchChd: false disables the raw-payload match too', () async {
         File('${tmp.path}/Ape Escape (Europe).chd').writeAsBytesSync(
