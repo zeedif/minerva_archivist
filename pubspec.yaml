@@ -2,8 +2,9 @@ name: minerva_workspace
 publish_to: none
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.13.4
 
 workspace:
   - packages/minerva_core
   - apps/cli
+  - apps/desktop

@@ -1,0 +1,21 @@
+name: minerva_desktop
+description: Desktop front end for MiNERVA Archivist.
+publish_to: none
+version: 3.0.0-dev
+resolution: workspace
+
+environment:
+  sdk: ^3.13.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  minerva_core:
+    path: ../../packages/minerva_core
+  path: ^1.9.1
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
