@@ -192,7 +192,7 @@ class _Shell extends StatelessWidget {
               layout: layout,
               controller: c,
               content: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 4, 16),
+                padding: const EdgeInsets.fromLTRB(16, 0, 0, 16),
                 child: ProfileForm(
                   c,
                   footer: Section(

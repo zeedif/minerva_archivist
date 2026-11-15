@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:minerva_core/minerva_core.dart';
 import 'package:minerva_desktop/main.dart';
 import 'package:minerva_desktop/output.dart';
+import 'package:minerva_desktop/profile_form.dart';
 import 'package:minerva_desktop/run_controller.dart';
 import 'package:minerva_desktop/settings.dart';
 import 'package:path/path.dart' as p;
@@ -341,5 +342,29 @@ void main() {
     await restored.restore();
     expect(restored.locale, const Locale('es'));
     expect(restored.theme, ThemeMode.light);
+  });
+
+  testWidgets('the settings scroll by a fixed extent', (tester) async {
+    final dir = cacheWith('cache', '{"profiles": {}}');
+    final controller = RunController(dir.path);
+    addTearDown(controller.dispose);
+    await tester.runAsync(controller.load);
+    await pumpApp(tester, controller);
+    final position = tester
+        .state<ScrollableState>(
+          find
+              .descendant(
+                of: find.byType(ProfileForm),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        )
+        .position;
+    final extent = position.maxScrollExtent;
+    expect(extent, greaterThan(0));
+    position.jumpTo(extent);
+    await tester.pump();
+    expect(position.maxScrollExtent, extent);
+    expect(position.pixels, extent);
   });
 }

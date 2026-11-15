@@ -387,11 +387,12 @@ class ProfileForm extends StatelessWidget {
       ),
       ?footer,
     ];
-    return ListView.separated(
-      padding: const EdgeInsets.only(right: 12),
-      itemCount: sections.length,
-      itemBuilder: (context, index) => sections[index],
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
+    return GutterScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: sections,
+      ),
     );
   }
 

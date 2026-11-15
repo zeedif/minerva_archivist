@@ -84,7 +84,6 @@ class OutputHost extends StatefulWidget {
 }
 
 class _OutputHostState extends State<OutputHost> {
-  static const _gap = 4.0;
   static const _zone = 56.0;
 
   bool _dragging = false;
@@ -198,9 +197,9 @@ class _OutputHostState extends State<OutputHost> {
         final inset = !shown
             ? EdgeInsets.zero
             : switch (l.dock) {
-                Dock.left => EdgeInsets.only(left: rect.width + _gap),
-                Dock.right => EdgeInsets.only(right: rect.width + _gap),
-                Dock.bottom => EdgeInsets.only(bottom: rect.height + _gap),
+                Dock.left => EdgeInsets.only(left: rect.width),
+                Dock.right => EdgeInsets.only(right: rect.width),
+                Dock.bottom => EdgeInsets.only(bottom: rect.height),
                 Dock.floating => EdgeInsets.zero,
               };
         return Stack(
@@ -693,12 +692,15 @@ class _OutputLogState extends State<OutputLog> {
       ),
       child: Scrollbar(
         controller: _scroll,
-        child: SingleChildScrollView(
-          controller: _scroll,
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-          child: SizedBox(
-            width: double.infinity,
-            child: Text.rich(TextSpan(children: spans), style: palette.mono),
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: SingleChildScrollView(
+            controller: _scroll,
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: Text.rich(TextSpan(children: spans), style: palette.mono),
+            ),
           ),
         ),
       ),

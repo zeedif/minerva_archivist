@@ -629,3 +629,48 @@ class PathBox extends StatelessWidget {
     );
   }
 }
+
+/// A vertical scroll view that keeps a fixed [gutter] on its right for the
+/// scrollbar, centred in it, so the content never changes width when the bar
+/// shows or hides.
+class GutterScrollView extends StatefulWidget {
+  const GutterScrollView({super.key, required this.child, this.gutter = 16});
+
+  final Widget child;
+  final double gutter;
+
+  @override
+  State<GutterScrollView> createState() => _GutterScrollViewState();
+}
+
+class _GutterScrollViewState extends State<GutterScrollView> {
+  /// The widest a Fluent scrollbar track gets, while hovered.
+  static const _track = 12.0;
+
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final outside = (widget.gutter - _track) / 2;
+    return Padding(
+      padding: EdgeInsets.only(right: outside),
+      child: Scrollbar(
+        controller: _scroll,
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: SingleChildScrollView(
+            controller: _scroll,
+            padding: EdgeInsets.only(right: widget.gutter - outside),
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
