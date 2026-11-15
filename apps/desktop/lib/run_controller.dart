@@ -9,11 +9,26 @@ import 'package:path/path.dart' as p;
 
 import 'settings.dart';
 
+/// What went wrong with the profiles file, for the UI to put into words.
+enum ProblemKind {
+  /// [Problem.subject] is a file that could not be read.
+  unreadable,
+
+  /// [Problem.subject] is a file that could not be written.
+  unwritable,
+
+  /// [Problem.subject] is a file or profile whose contents are invalid.
+  invalid,
+}
+
+typedef Problem = ({ProblemKind kind, String subject, String detail});
+
 /// What a run has reported about one DAT so far.
 final class PlatformProgress {
   PlatformProgress(this.name);
 
-  final String name;
+  /// The DAT's name; null for failures that belong to the run as a whole.
+  final String? name;
   SelectionResult? selection;
   AuditReport? audit;
   DownloadPlanned? download;
@@ -58,7 +73,7 @@ final class CacheCatalog {
         }
       }
     }
-    languages[PriorityList.other] = 'Any other language';
+    languages[PriorityList.other] = '';
     final regions = [
       if (json['defaultRegionOrder'] case final Map<String, Object?> order)
         ...order.keys,
@@ -74,7 +89,8 @@ final class CacheCatalog {
   /// `source:system` references of the DATs already in the cache.
   final List<String> dats;
 
-  /// Language code to its English name.
+  /// Language code to its English name; [PriorityList.other] maps to an
+  /// empty name for the UI to word.
   final Map<String, String> languages;
   final List<String> regions;
 }
@@ -94,10 +110,10 @@ final class RunController extends ChangeNotifier {
   CacheCatalog catalog = const CacheCatalog();
 
   /// Why the cache folder or its profiles cannot be used.
-  String? cacheError;
+  Problem? cacheError;
 
   /// Why the last load, save or delete failed.
-  String? actionError;
+  Problem? actionError;
 
   /// The profile name typed by the user; it names what Load, Save and Delete
   /// act on.
@@ -115,7 +131,9 @@ final class RunController extends ChangeNotifier {
   bool running = false;
   bool applied = false;
   final platforms = <PlatformProgress>[];
-  String? syncSummary;
+
+  /// What the sync stage reported: files updated and errors.
+  ({int downloaded, int errors})? sync;
 
   SendPort? _control;
   int _loadRequest = 0;
@@ -143,7 +161,7 @@ final class RunController extends ChangeNotifier {
     notifyListeners();
     final file = File(p.join(target, 'profiles.jsonc'));
     Profiles? loaded;
-    String? error;
+    Problem? error;
     var catalog = const CacheCatalog();
     try {
       loaded = await file.exists()
@@ -151,9 +169,17 @@ final class RunController extends ChangeNotifier {
           : Profiles.empty(file);
       catalog = await CacheCatalog.load(target);
     } on FileSystemException catch (e) {
-      error = 'Cannot read ${file.path}: ${e.message}';
+      error = (
+        kind: ProblemKind.unreadable,
+        subject: file.path,
+        detail: e.message,
+      );
     } on FormatException catch (e) {
-      error = '${file.path}: ${e.message}';
+      error = (
+        kind: ProblemKind.invalid,
+        subject: file.path,
+        detail: e.message,
+      );
     }
     if (request != _loadRequest) return;
     cacheDir = target;
@@ -193,8 +219,23 @@ final class RunController extends ChangeNotifier {
       _validate();
       platforms.clear();
     } on FormatException catch (e) {
-      actionError = '${name.trim()}: ${e.message}';
+      actionError = (
+        kind: ProblemKind.invalid,
+        subject: name.trim(),
+        detail: e.message,
+      );
     }
+    notifyListeners();
+  }
+
+  /// Clears the name and puts back the settings the app starts with.
+  void clear() {
+    if (running) return;
+    name = '';
+    draft = _defaults();
+    _touched = false;
+    actionError = null;
+    _validate();
     notifyListeners();
   }
 
@@ -224,9 +265,17 @@ final class RunController extends ChangeNotifier {
       await profiles.save(name.trim(), options);
       actionError = null;
     } on FileSystemException catch (e) {
-      actionError = 'Cannot save ${profilesFile.path}: ${e.message}';
+      actionError = (
+        kind: ProblemKind.unwritable,
+        subject: profilesFile.path,
+        detail: e.message,
+      );
     } on FormatException catch (e) {
-      actionError = e.message;
+      actionError = (
+        kind: ProblemKind.invalid,
+        subject: profilesFile.path,
+        detail: e.message,
+      );
     }
     notifyListeners();
   }
@@ -239,9 +288,17 @@ final class RunController extends ChangeNotifier {
       await profiles.delete(name.trim());
       actionError = null;
     } on FileSystemException catch (e) {
-      actionError = 'Cannot save ${profilesFile.path}: ${e.message}';
+      actionError = (
+        kind: ProblemKind.unwritable,
+        subject: profilesFile.path,
+        detail: e.message,
+      );
     } on FormatException catch (e) {
-      actionError = e.message;
+      actionError = (
+        kind: ProblemKind.invalid,
+        subject: profilesFile.path,
+        detail: e.message,
+      );
     }
     notifyListeners();
   }
@@ -269,7 +326,7 @@ final class RunController extends ChangeNotifier {
     if (running || loading || options == null || options.dats.isEmpty) return;
     running = true;
     applied = apply;
-    syncSummary = null;
+    sync = null;
     platforms.clear();
     notifyListeners();
 
@@ -304,9 +361,7 @@ final class RunController extends ChangeNotifier {
     final current = platforms.lastOrNull;
     switch (event) {
       case SyncFinished(:final report):
-        syncSummary =
-            '${report.downloaded} metadata file(s) updated'
-            '${report.errors.isEmpty ? "" : ", ${report.errors.length} error(s)"}';
+        sync = (downloaded: report.downloaded, errors: report.errors.length);
       case PlatformStarted(:final dat):
         platforms.add(PlatformProgress(dat.header.name));
       case SelectionFinished(:final selection):
@@ -326,7 +381,7 @@ final class RunController extends ChangeNotifier {
       case PruneFinished():
         current?.pruned = event;
       case StageFailed(:final stage, :final message):
-        final target = current ?? PlatformProgress('Run');
+        final target = current ?? PlatformProgress(null);
         if (current == null) platforms.add(target);
         target.failures.add('${stage.name}: $message');
     }

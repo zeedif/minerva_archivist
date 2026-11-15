@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import 'controls.dart';
+import 'l10n/app_localizations.dart';
 import 'profile_form.dart';
 import 'run_controller.dart';
 import 'output.dart';
@@ -23,22 +24,47 @@ Future<void> main(List<String> args) async {
       findCacheDir(Directory.current.path);
   final controller = RunController(cacheDir, settings: settings);
   final layout = OutputLayout(settings: settings);
-  await layout.restore();
+  final preferences = AppPreferences(settings: settings);
+  await (layout.restore(), preferences.restore()).wait;
   unawaited(controller.load());
-  runApp(MinervaApp(controller: controller, layout: layout));
+  runApp(
+    MinervaApp(
+      controller: controller,
+      layout: layout,
+      preferences: preferences,
+    ),
+  );
 }
 
 class MinervaApp extends StatelessWidget {
-  MinervaApp({super.key, required this.controller, OutputLayout? layout})
-    : layout = layout ?? OutputLayout();
+  MinervaApp({
+    super.key,
+    required this.controller,
+    OutputLayout? layout,
+    AppPreferences? preferences,
+  }) : layout = layout ?? OutputLayout(),
+       preferences = preferences ?? AppPreferences();
 
   final RunController controller;
   final OutputLayout layout;
+  final AppPreferences preferences;
 
   @override
-  Widget build(BuildContext context) => FluentApp(
-    title: 'MiNERVA Archivist',
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: preferences,
+    builder: (context, _) => _app(),
+  );
+
+  Widget _app() => FluentApp(
+    onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
     debugShowCheckedModeBanner: false,
+    locale: preferences.locale,
+    supportedLocales: AppLocalizations.supportedLocales,
+    localizationsDelegates: const [
+      AppLocalizations.delegate,
+      ...FluentLocalizations.localizationsDelegates,
+    ],
+    themeMode: preferences.theme,
     theme: FluentThemeData(
       brightness: Brightness.light,
       accentColor: Colors.blue,
@@ -60,22 +86,31 @@ class MinervaApp extends StatelessWidget {
         autofocus: true,
         child: ListenableBuilder(
           listenable: Listenable.merge([controller, layout]),
-          builder: (context, _) => _Shell(controller, layout),
+          builder: (context, _) => _Shell(controller, layout, preferences),
         ),
       ),
     ),
   );
 }
 
+/// [problem] in the current language.
+String describe(AppLocalizations l, Problem problem) => switch (problem.kind) {
+  ProblemKind.unreadable => l.cannotRead(problem.subject, problem.detail),
+  ProblemKind.unwritable => l.cannotSave(problem.subject, problem.detail),
+  ProblemKind.invalid => l.subjectProblem(problem.subject, problem.detail),
+};
+
 class _Shell extends StatelessWidget {
-  const _Shell(this.controller, this.layout);
+  const _Shell(this.controller, this.layout, this.preferences);
 
   final RunController controller;
   final OutputLayout layout;
+  final AppPreferences preferences;
 
   @override
   Widget build(BuildContext context) {
     final c = controller;
+    final l = AppLocalizations.of(context);
     final theme = FluentTheme.of(context);
     final runnable =
         !c.running && !c.loading && (c.options?.dats.isNotEmpty ?? false);
@@ -98,27 +133,27 @@ class _Shell extends StatelessWidget {
                     primaryItems: [
                       CommandBarButton(
                         icon: const Icon(FluentIcons.view),
-                        label: const Text('Preview'),
+                        label: Text(l.preview),
                         onPressed: runnable
                             ? () => c.start(apply: false)
                             : null,
                       ),
                       CommandBarButton(
                         icon: const Icon(FluentIcons.play),
-                        label: const Text('Apply'),
+                        label: Text(l.apply),
                         onPressed: runnable ? () => c.start(apply: true) : null,
                       ),
                       if (c.running)
                         CommandBarButton(
                           icon: const Icon(FluentIcons.stop),
-                          label: const Text('Stop'),
+                          label: Text(l.stop),
                           onPressed: c.stop,
                         ),
                       const CommandBarSeparator(),
                       CommandBarButton(
                         icon: const Icon(FluentIcons.command_prompt),
                         label: Text(
-                          layout.visible ? 'Hide output' : 'Show output',
+                          layout.visible ? l.hideOutput : l.showOutput,
                         ),
                         tooltip: 'F12',
                         onPressed: () => layout.update(
@@ -128,14 +163,17 @@ class _Shell extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
+                _Preferences(preferences),
               ],
             ),
           ),
           for (final (title, message) in [
-            if (c.cacheError case final error?) ('Cache folder', error),
-            if (c.actionError case final error?) ('Profile', error),
-            if (c.optionsError case final error?)
-              ('These settings cannot run', error),
+            if (c.cacheError case final error?)
+              (l.problemCache, describe(l, error)),
+            if (c.actionError case final error?)
+              (l.problemProfile, describe(l, error)),
+            if (c.optionsError case final error?) (l.problemSettings, error),
           ])
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -158,14 +196,9 @@ class _Shell extends StatelessWidget {
                 child: ProfileForm(
                   c,
                   footer: Section(
-                    title: 'Cache folder',
+                    title: l.cacheFolder,
                     children: [
-                      Field(
-                        help:
-                            'Where profiles.jsonc, the DATs and the metadata '
-                            'live. Remembered for the next launch.',
-                        child: _CacheField(c),
-                      ),
+                      Field(help: l.cacheFolderHelp, child: _CacheField(c)),
                     ],
                   ),
                 ),
@@ -186,22 +219,20 @@ class _ProfileBar extends StatelessWidget {
 
   Future<void> _delete(BuildContext context) async {
     final c = controller;
+    final l = AppLocalizations.of(context);
     final name = c.name.trim();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => ContentDialog(
-        title: const Text('Delete profile?'),
-        content: Text(
-          '"$name" is removed from ${p.basename(c.profilesFile.path)}. '
-          'The settings on screen stay as they are.',
-        ),
+        title: Text(l.deleteTitle),
+        content: Text(l.deleteBody(name, p.basename(c.profilesFile.path))),
         actions: [
           Button(
-            child: const Text('Cancel'),
+            child: Text(l.cancel),
             onPressed: () => Navigator.of(context).pop(false),
           ),
           FilledButton(
-            child: const Text('Delete'),
+            child: Text(l.delete),
             onPressed: () => Navigator.of(context).pop(true),
           ),
         ],
@@ -213,6 +244,7 @@ class _ProfileBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = controller;
+    final l = AppLocalizations.of(context);
     final idle = !c.running && c.profiles != null;
     return Row(
       spacing: 6,
@@ -220,15 +252,23 @@ class _ProfileBar extends StatelessWidget {
         SizedBox(width: 300, child: _ProfileBox(c, enabled: idle)),
         Button(
           onPressed: idle && c.nameExists ? c.loadProfile : null,
-          child: const Text('Load'),
+          child: Text(l.load),
         ),
         Button(
           onPressed: c.canSave ? c.saveProfile : null,
-          child: const Text('Save'),
+          child: Text(l.save),
         ),
         Button(
           onPressed: idle && c.nameExists ? () => _delete(context) : null,
-          child: const Text('Delete'),
+          child: Text(l.delete),
+        ),
+        const SizedBox(width: 6),
+        Tooltip(
+          message: l.clearTooltip,
+          child: Button(
+            onPressed: c.running ? null : c.clear,
+            child: Text(l.clear),
+          ),
         ),
       ],
     );
@@ -340,8 +380,8 @@ class _ProfileBoxState extends State<_ProfileBox> {
                         padding: const EdgeInsets.all(8),
                         child: Text(
                           c.profiles?.names.isEmpty ?? true
-                              ? 'No profiles yet. Type a name and Save.'
-                              : 'No profile matches; Save creates it.',
+                              ? AppLocalizations.of(context).noProfilesYet
+                              : AppLocalizations.of(context).noProfileMatches,
                           style: theme.typography.caption,
                         ),
                       )
@@ -378,7 +418,7 @@ class _ProfileBoxState extends State<_ProfileBox> {
             key: const ValueKey('profile-name'),
             value: c.name,
             focusNode: _focus,
-            placeholder: 'Profile name',
+            placeholder: AppLocalizations.of(context).profileName,
             enabled: widget.enabled,
             onChanged: (text) {
               c.rename(text);
@@ -414,7 +454,7 @@ class _CacheFieldState extends State<_CacheField> {
   late final _text = TextEditingController(text: widget.controller.cacheDir);
   final _focus = FocusNode();
   Timer? _debounce;
-  String? _error;
+  bool _missing = false;
   late String _shown = widget.controller.cacheDir;
 
   @override
@@ -447,7 +487,7 @@ class _CacheFieldState extends State<_CacheField> {
     final pasted = (text.length - _shown.length).abs() > 1;
     _shown = text;
     if (target.isNotEmpty && widget.controller.isCurrent(target)) {
-      setState(() => _error = null);
+      setState(() => _missing = false);
       return;
     }
     _debounce = Timer(
@@ -461,10 +501,10 @@ class _CacheFieldState extends State<_CacheField> {
     final c = widget.controller;
     if (target.isEmpty || c.isCurrent(target)) return;
     if (!await Directory(target).exists()) {
-      if (mounted) setState(() => _error = 'Folder not found.');
+      if (mounted) setState(() => _missing = true);
       return;
     }
-    if (mounted) setState(() => _error = null);
+    if (mounted) setState(() => _missing = false);
     await c.load(directory: target);
   }
 
@@ -473,7 +513,7 @@ class _CacheFieldState extends State<_CacheField> {
     final typed = _text.text.trim();
     final picked = await getDirectoryPath(
       initialDirectory: Directory(typed).existsSync() ? typed : c.cacheDir,
-      confirmButtonText: 'Use folder',
+      confirmButtonText: AppLocalizations.of(context).useFolder,
     );
     if (picked == null || !mounted) return;
     _text.text = picked;
@@ -484,8 +524,14 @@ class _CacheFieldState extends State<_CacheField> {
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
+    final l = AppLocalizations.of(context);
     final theme = FluentTheme.of(context);
-    final error = _error ?? c.cacheError;
+    final error = _missing
+        ? l.folderNotFound
+        : switch (c.cacheError) {
+            final problem? => describe(l, problem),
+            null => null,
+          };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -496,14 +542,14 @@ class _CacheFieldState extends State<_CacheField> {
                 controller: _text,
                 focusNode: _focus,
                 enabled: !c.running,
-                placeholder: 'Folder with profiles.jsonc',
+                placeholder: l.cachePlaceholder,
                 onChanged: _changed,
                 onSubmitted: (text) => _apply(text.trim()),
               ),
             ),
             const SizedBox(width: 6),
             Tooltip(
-              message: 'Browse',
+              message: l.browse,
               child: Button(
                 onPressed: c.running ? null : _browse,
                 child: const Icon(FluentIcons.open_folder_horizontal, size: 14),
@@ -526,12 +572,74 @@ class _CacheFieldState extends State<_CacheField> {
         else if (c.profiles != null && !c.profilesFile.existsSync())
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              'No profiles.jsonc here yet; saving creates it.',
-              style: theme.typography.caption,
-            ),
+            child: Text(l.noProfilesFile, style: theme.typography.caption),
           ),
       ],
     );
   }
+}
+
+/// Forces the language or the theme; the first choice of each follows
+/// Windows.
+class _Preferences extends StatelessWidget {
+  const _Preferences(this.preferences);
+
+  final AppPreferences preferences;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final language = preferences.locale?.languageCode ?? _system;
+    return Row(
+      spacing: 4,
+      children: [
+        Tooltip(
+          message: l.languageMenu,
+          child: DropDownButton(
+            leading: const Icon(FluentIcons.locale_language, size: 14),
+            items: [
+              for (final (code, label) in [
+                (_system, l.languageSystem),
+                ('en', 'English'),
+                ('es', 'Español'),
+              ])
+                RadioMenuFlyoutItem<String>(
+                  text: Text(label),
+                  value: code,
+                  groupValue: language,
+                  onChanged: (code) => preferences.setLocale(
+                    code == _system ? null : Locale(code),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Tooltip(
+          message: l.themeMenu,
+          child: DropDownButton(
+            leading: Icon(switch (preferences.theme) {
+              ThemeMode.light => FluentIcons.sunny,
+              ThemeMode.dark => FluentIcons.clear_night,
+              ThemeMode.system => FluentIcons.color,
+            }, size: 14),
+            items: [
+              for (final (mode, label) in [
+                (ThemeMode.system, l.themeSystem),
+                (ThemeMode.light, l.themeLight),
+                (ThemeMode.dark, l.themeDark),
+              ])
+                RadioMenuFlyoutItem<ThemeMode>(
+                  text: Text(label),
+                  value: mode,
+                  groupValue: preferences.theme,
+                  onChanged: preferences.setTheme,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static const _system = 'system';
 }

@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/widgets.dart' show ChangeNotifier, Locale;
+import 'package:fluent_ui/fluent_ui.dart' show ThemeMode;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -67,5 +69,35 @@ String findCacheDir(String start) {
     final candidate = p.join(dir, '.minerva-cache');
     if (Directory(candidate).existsSync()) return candidate;
     if (p.dirname(dir) == dir) return p.join(origin, '.minerva-cache');
+  }
+}
+
+/// The language and theme the user forced, or null and [ThemeMode.system]
+/// to follow Windows.
+final class AppPreferences extends ChangeNotifier {
+  AppPreferences({this.settings});
+
+  final AppSettings? settings;
+  Locale? locale;
+  ThemeMode theme = ThemeMode.system;
+
+  Future<void> restore() async {
+    if (await settings?.value('language') case final String code) {
+      locale = Locale(code);
+    }
+    theme =
+        ThemeMode.values.asNameMap()[await settings?.value('theme')] ?? theme;
+  }
+
+  void setLocale(Locale? value) {
+    locale = value;
+    notifyListeners();
+    settings?.setValue('language', value?.languageCode);
+  }
+
+  void setTheme(ThemeMode value) {
+    theme = value;
+    notifyListeners();
+    settings?.setValue('theme', value.name);
   }
 }

@@ -282,4 +282,64 @@ void main() {
     expect(controller.draft['priority'], ['ra', 'lang', 'region']);
     expect(controller.draft['priority'], isNot(['lang', 'region', 'ra']));
   });
+
+  test('Clear puts back the settings the app starts with', () async {
+    final dir = cacheWith(
+      'cache',
+      '{"defaults": {"layout": "extracted"},'
+          ' "profiles": {"gb": {"dat": "Nintendo - Game Boy"}}}',
+    );
+    final controller = RunController(dir.path);
+    addTearDown(controller.dispose);
+    await controller.load();
+    final start = {...controller.draft};
+    controller
+      ..rename('gb')
+      ..loadProfile()
+      ..edit('layout', 'zip');
+    controller.clear();
+    expect(controller.name, isEmpty);
+    expect(controller.draft, start);
+  });
+
+  testWidgets('the interface follows a forced language and theme', (
+    tester,
+  ) async {
+    final dir = cacheWith('cache', '{"profiles": {}}');
+    final controller = RunController(dir.path);
+    addTearDown(controller.dispose);
+    await tester.runAsync(controller.load);
+    final preferences = AppPreferences()..locale = const Locale('es');
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MinervaApp(controller: controller, preferences: preferences),
+    );
+    await tester.pump();
+    expect(find.text('Cargar'), findsOneWidget);
+    expect(find.text('Colección'), findsOneWidget);
+    expect(find.text('Vista previa'), findsOneWidget);
+    preferences.setLocale(const Locale('en'));
+    preferences.setTheme(ThemeMode.dark);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Load'), findsOneWidget);
+    expect(
+      FluentTheme.of(tester.element(find.text('Load'))).brightness,
+      Brightness.dark,
+    );
+  });
+
+  test('the language and theme are remembered', () async {
+    final settings = AppSettings(File(p.join(temporary.path, 'settings.json')));
+    AppPreferences(settings: settings)
+      ..setLocale(const Locale('es'))
+      ..setTheme(ThemeMode.light);
+    await settings.setValue('flush', true);
+    final restored = AppPreferences(settings: settings);
+    await restored.restore();
+    expect(restored.locale, const Locale('es'));
+    expect(restored.theme, ThemeMode.light);
+  });
 }

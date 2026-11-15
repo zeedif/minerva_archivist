@@ -6,6 +6,7 @@ import 'package:minerva_core/minerva_core.dart';
 import 'package:path/path.dart' as p;
 
 import 'controls.dart';
+import 'l10n/app_localizations.dart';
 import 'run_controller.dart';
 
 /// Every option of the draft, each limited to the values it accepts.
@@ -20,6 +21,7 @@ class ProfileForm extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = controller;
+    final l = AppLocalizations.of(context);
     final draft = c.draft;
     final enabled = !c.running;
     ValueChanged<T>? edit<T>(String key) =>
@@ -33,24 +35,22 @@ class ProfileForm extends StatelessWidget {
 
     final sections = [
       Section(
-        title: 'Collection',
+        title: l.sectionCollection,
         children: [
           Field(
-            label: 'Systems',
-            help:
-                'DATs from the cache, a .dat file or a folder of them. '
-                'Several are merged into one collection.',
+            label: l.systems,
+            help: l.systemsHelp,
             child: BadgeFlow<String>(
               values: list('dat'),
               label: (dat) => dat,
-              empty: 'No system yet.',
+              empty: l.noSystem,
               onChanged: edit('dat'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 spacing: 6,
                 children: [
                   Picker(
-                    label: 'Add system',
+                    label: l.addSystem,
                     custom: true,
                     choices: [
                       for (final dat in c.catalog.dats)
@@ -82,50 +82,52 @@ class ProfileForm extends StatelessWidget {
                             }
                           }
                         : null,
-                    child: const Text('Browse .dat…'),
+                    child: Text(l.browseDat),
                   ),
                 ],
               ),
             ),
           ),
           Field(
-            label: 'ROM folder',
-            help: 'Where the collection lives. Empty only previews the selection.',
+            label: l.romFolder,
+            help: l.romFolderHelp,
             child: PathBox(
               value: root,
-              placeholder: 'No ROM folder',
+              placeholder: l.noRomFolder,
               onChanged: edit('root'),
               browse: () => getDirectoryPath(
                 initialDirectory: _existing(root),
-                confirmButtonText: 'Use folder',
+                confirmButtonText: l.useFolder,
               ),
             ),
           ),
           Field(
-            label: 'Layout',
-            help: 'How each game sits under the ROM folder.',
+            label: l.layout,
+            help: l.layoutHelp,
             child: ChoiceBox<String>(
               value: draft['layout'] as String? ?? Layout.zip.cli,
               choices: [
                 for (final layout in Layout.values)
                   (
                     value: layout.cli,
-                    title: _layoutTitles[layout]!,
-                    detail: _layoutShapes[layout],
+                    title: _layoutTitle(l, layout),
+                    detail: layout == Layout.extractedInFolder
+                        ? l.layoutEsDe(_layoutShapes[layout]!)
+                        : _layoutShapes[layout],
                   ),
               ],
               onChanged: edit('layout'),
             ),
           ),
           Field(
-            label: 'Protected folders',
-            help: 'Top-level folders under the ROM folder that are never touched.',
+            label: l.protectedFolders,
+            help: l.protectedFoldersHelp,
             child: BadgeFlow<String>(
               values: list('protect'),
               label: (folder) => folder,
               onChanged: edit('protect'),
               trailing: Picker(
-                label: 'Add folder',
+                label: l.addFolder,
                 custom: true,
                 load: () => _folders(root, except: list('protect')),
                 onPicked: enabled
@@ -136,14 +138,14 @@ class ProfileForm extends StatelessWidget {
             ),
           ),
           Field(
-            label: 'Search depth',
-            help: 'How many folders below the ROM folder are scanned.',
+            label: l.searchDepth,
+            help: l.searchDepthHelp,
             child: SizedBox(
               width: 200,
               child: NumberBox<int>(
                 value: draft['depth'] as int?,
                 min: 0,
-                placeholder: 'Unlimited',
+                placeholder: l.unlimited,
                 mode: SpinButtonPlacementMode.inline,
                 onChanged: edit('depth'),
               ),
@@ -152,60 +154,57 @@ class ProfileForm extends StatelessWidget {
         ],
       ),
       Section(
-        title: 'Choosing one release per game',
+        title: l.sectionOneRelease,
         children: [
           Field(
-            label: 'Priority',
-            help:
-                'The tie-breaks in the order they decide. Drag to reorder, '
-                'or down to drop one. Region still applies when dropped, '
-                'after the rest.',
+            label: l.priority,
+            help: l.priorityHelp,
             child: BadgeFlow<String>(
               values: priority,
               numbered: true,
-              label: (axis) => _axisTitles[axis] ?? axis,
+              label: (axis) => _axisTitle(l, axis),
               pool: [for (final axis in ScoreAxis.values) axis.name],
               onChanged: edit('priority'),
             ),
           ),
           if (priority.contains(ScoreAxis.langcount.name))
             Field(
-              label: 'Language count',
-              help: 'Which way the number of languages in a dump ranks.',
+              label: l.languageCount,
+              help: l.languageCountHelp,
               child: ChoiceBox<String>(
                 value: draft['langcount'] as String? ?? LangCount.most.name,
-                choices: const [
-                  (
-                    value: 'most',
-                    title: 'Most languages',
-                    detail: 'The dump that speaks more languages wins.',
-                  ),
+                choices: [
+                  (value: 'most', title: l.langMost, detail: l.langMostHelp),
                   (
                     value: 'fewest',
-                    title: 'Fewest languages',
-                    detail: 'The smaller dump wins; useful for large discs.',
+                    title: l.langFewest,
+                    detail: l.langFewestHelp,
                   ),
                 ],
                 onChanged: edit('langcount'),
               ),
             ),
           Field(
-            label: 'Languages',
-            help: 'Earlier is better. A code also covers its variants: Es covers Es-MX.',
+            label: l.languages,
+            help: l.languagesHelp,
             child: BadgeFlow<String>(
               values: list('lang'),
               label: (code) => code,
-              tooltip: (code) => c.catalog.languages[code],
-              empty: 'No language: none is preferred.',
+              tooltip: (code) => _languageName(l, c, code),
+              empty: l.noLanguage,
               onChanged: edit('lang'),
               trailing: Picker(
-                label: 'Add language',
+                label: l.addLanguage,
                 custom: c.catalog.languages.length <= 1,
                 choices: [
                   for (final MapEntry(key: code, value: name)
                       in c.catalog.languages.entries)
                     if (!list('lang').contains(code))
-                      (value: code, title: name, detail: code),
+                      (
+                        value: code,
+                        title: name.isEmpty ? l.anyOtherLanguage : name,
+                        detail: code,
+                      ),
                 ],
                 onPicked: enabled
                     ? (code) => c.edit('lang', [...list('lang'), code])
@@ -214,15 +213,15 @@ class ProfileForm extends StatelessWidget {
             ),
           ),
           Field(
-            label: 'Regions',
-            help: 'Earlier is better. Empty keeps the full default order.',
+            label: l.regions,
+            help: l.regionsHelp,
             child: BadgeFlow<String>(
               values: list('region'),
               label: (region) => region,
-              empty: 'Default order.',
+              empty: l.defaultOrder,
               onChanged: edit('region'),
               trailing: Picker(
-                label: 'Add region',
+                label: l.addRegion,
                 custom: c.catalog.regions.length <= 2,
                 choices: [
                   for (final region in c.catalog.regions)
@@ -236,21 +235,21 @@ class ProfileForm extends StatelessWidget {
             ),
           ),
           Field(
-            label: 'Achievements',
-            help: 'Whether a game needs a RetroAchievements set to be kept.',
+            label: l.achievements,
+            help: l.achievementsHelp,
             child: ChoiceBox<String>(
               value: draft['achievements'] as String? ?? _off,
-              choices: const [
-                (value: _off, title: 'Not required', detail: null),
+              choices: [
+                (value: _off, title: l.achievementsOff, detail: null),
                 (
                   value: 'any',
-                  title: 'Any dump',
-                  detail: 'The game has a set; the priority picks the dump.',
+                  title: l.achievementsAny,
+                  detail: l.achievementsAnyHelp,
                 ),
                 (
                   value: 'approved',
-                  title: 'Approved dumps only',
-                  detail: 'Only the dumps the set was made for.',
+                  title: l.achievementsApproved,
+                  detail: l.achievementsApprovedHelp,
                 ),
               ],
               onChanged: enabled
@@ -260,75 +259,74 @@ class ProfileForm extends StatelessWidget {
             ),
           ),
           Field(
-            label: 'Editions with extra content',
+            label: l.supersets,
             child: ChoiceBox<String>(
               value: draft['supersets'] as String? ?? SupersetMode.prefer.name,
-              choices: const [
+              choices: [
                 (
                   value: 'prefer',
-                  title: 'Prefer',
-                  detail:
-                      'An edition that contains the original takes its place.',
+                  title: l.supersetsPrefer,
+                  detail: l.supersetsPreferHelp,
                 ),
                 (
                   value: 'ignore',
-                  title: 'Ignore',
-                  detail: 'Treated like any other release.',
+                  title: l.supersetsIgnore,
+                  detail: l.supersetsIgnoreHelp,
                 ),
               ],
               onChanged: edit('supersets'),
             ),
           ),
           Field(
-            label: 'Compilations',
+            label: l.compilations,
             child: ChoiceBox<String>(
               value:
                   draft['compilations'] as String? ?? CompilationMode.fill.name,
-              choices: const [
+              choices: [
                 (
                   value: 'never',
-                  title: 'Never',
-                  detail: 'A pack only competes in its own group.',
+                  title: l.compilationsNever,
+                  detail: l.compilationsNeverHelp,
                 ),
                 (
                   value: 'fill',
-                  title: 'Fill gaps',
-                  detail: 'A pack stands in only for games with no release.',
+                  title: l.compilationsFill,
+                  detail: l.compilationsFillHelp,
                 ),
                 (
                   value: 'prefer',
-                  title: 'Prefer',
-                  detail: 'A pack takes the slots; the priority still decides first.',
+                  title: l.compilationsPrefer,
+                  detail: l.compilationsPreferHelp,
                 ),
                 (
                   value: 'first',
-                  title: 'First',
-                  detail: 'A pack takes the slots ahead of the priority too.',
+                  title: l.compilationsFirst,
+                  detail: l.compilationsFirstHelp,
                 ),
               ],
               onChanged: edit('compilations'),
             ),
           ),
           Field(
-            label: 'Exclude',
-            help: 'Kinds of releases left out of the collection.',
+            label: l.exclude,
+            help: l.excludeHelp,
             child: _Checks(
               values: [for (final kind in ExcludeKind.values) kind.cli],
               checked: list('exclude').toSet(),
-              label: _sentence,
+              label: (kind) => _excludeTitle(l, kind),
               onChanged: edit('exclude'),
             ),
           ),
         ],
       ),
       Section(
-        title: 'Wishlist',
+        title: l.sectionWishlist,
         children: [
           Field(
-            help: 'A JSONC list of titles to collect.',
+            help: l.wishlistHelp,
             child: PathBox(
               value: wishlist,
-              placeholder: 'No wishlist',
+              placeholder: l.noWishlist,
               onChanged: edit('wishlist'),
               browse: () async => (await openFile(
                 initialDirectory:
@@ -342,25 +340,21 @@ class ProfileForm extends StatelessWidget {
           ),
           if (wishlist != null)
             Field(
-              label: 'Mode',
+              label: l.wishlistMode,
               child: ChoiceBox<String>(
                 value:
                     draft['wishlist-mode'] as String? ??
                     WishlistMode.absolute.name,
-                choices: const [
+                choices: [
                   (
                     value: 'absolute',
-                    title: 'Absolute',
-                    detail:
-                        'Everything listed is kept; the other rules only '
-                        'choose which dump.',
+                    title: l.wishlistAbsolute,
+                    detail: l.wishlistAbsoluteHelp,
                   ),
                   (
                     value: 'subset',
-                    title: 'Subset',
-                    detail:
-                        'Listed titles still have to pass the language, '
-                        'region and achievement rules.',
+                    title: l.wishlistSubset,
+                    detail: l.wishlistSubsetHelp,
                   ),
                 ],
                 onChanged: edit('wishlist-mode'),
@@ -369,17 +363,17 @@ class ProfileForm extends StatelessWidget {
         ],
       ),
       Section(
-        title: 'Stages',
+        title: l.sectionStages,
         children: [
           Field(
-            help: 'Unchecked stages are skipped.',
+            help: l.stagesHelp,
             child: _Checks(
               values: [for (final stage in Stage.values) stage.name],
               checked: {
                 for (final stage in Stage.values)
                   if (!list('skip').contains(stage.name)) stage.name,
               },
-              label: (stage) => _stageTitles[stage]!,
+              label: (stage) => _stageTitle(l, stage),
               columns: false,
               onChanged: enabled
                   ? (run) => c.edit('skip', [
@@ -425,42 +419,68 @@ class ProfileForm extends StatelessWidget {
     ]..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
   }
 
-  static String _sentence(String cli) => switch (cli) {
-    'add-ons' => 'Add-ons',
-    'bios' => 'BIOS',
-    'mia' => 'Missing dumps (MIA)',
-    _ => '${cli[0].toUpperCase()}${cli.substring(1).replaceAll('-', ' ')}',
+  static String? _languageName(
+    AppLocalizations l,
+    RunController c,
+    String code,
+  ) => switch (c.catalog.languages[code]) {
+    '' => l.anyOtherLanguage,
+    final name => name,
   };
 
-  static const _axisTitles = {
-    'lang': 'Language',
-    'region': 'Region',
-    'ra': 'RetroAchievements',
-    'langcount': 'Language count',
+  static String _excludeTitle(AppLocalizations l, String cli) => switch (cli) {
+    'add-ons' => l.excludeAddOns,
+    'applications' => l.excludeApplications,
+    'audio' => l.excludeAudio,
+    'bad-dumps' => l.excludeBadDumps,
+    'bios' => l.excludeBios,
+    'bonus-discs' => l.excludeBonusDiscs,
+    'coverdiscs' => l.excludeCoverdiscs,
+    'demos' => l.excludeDemos,
+    'educational' => l.excludeEducational,
+    'manuals' => l.excludeManuals,
+    'mia' => l.excludeMia,
+    'multimedia' => l.excludeMultimedia,
+    'pirate' => l.excludePirate,
+    'preproduction' => l.excludePreproduction,
+    'promotional' => l.excludePromotional,
+    'unlicensed' => l.excludeUnlicensed,
+    'video' => l.excludeVideo,
+    _ => cli,
   };
 
-  static const _layoutTitles = {
-    Layout.zip: 'Zip',
-    Layout.zipInFolder: 'Zip in a folder',
-    Layout.extracted: 'Extracted',
-    Layout.extractedInFolder: 'Extracted in a folder',
+  static String _axisTitle(AppLocalizations l, String axis) => switch (axis) {
+    'lang' => l.axisLang,
+    'region' => l.axisRegion,
+    'ra' => l.axisRa,
+    'langcount' => l.axisLangcount,
+    _ => axis,
   };
+
+  static String _layoutTitle(AppLocalizations l, Layout layout) =>
+      switch (layout) {
+        Layout.zip => l.layoutZip,
+        Layout.zipInFolder => l.layoutZipInFolder,
+        Layout.extracted => l.layoutExtracted,
+        Layout.extractedInFolder => l.layoutExtractedInFolder,
+      };
 
   static const _layoutShapes = {
     Layout.zip: '<root>/<game>.zip',
     Layout.zipInFolder: '<root>/<game>/<game>.zip',
     Layout.extracted: '<root>/<game>.<ext>',
-    Layout.extractedInFolder:
-        '<root>/<game>.<ext>/<game>.<ext>, which ES-DE launches as one entry',
+    Layout.extractedInFolder: '<root>/<game>.<ext>/<game>.<ext>',
   };
 
-  static const _stageTitles = {
-    'sync': 'Update metadata and DATs',
-    'download': 'Download what is missing',
-    'organize': 'Arrange files into the layout',
-    'playlists': 'Write multi-disc playlists',
-    'prune': 'Move files outside the selection to .trash',
-  };
+  static String _stageTitle(AppLocalizations l, String stage) =>
+      switch (stage) {
+        'sync' => l.stageSync,
+        'download' => l.stageDownload,
+        'organize' => l.stageOrganize,
+        'playlists' => l.stagePlaylists,
+        'prune' => l.stagePrune,
+        _ => stage,
+      };
 }
 
 /// A wrap of check boxes; [onChanged] receives the checked values in order.

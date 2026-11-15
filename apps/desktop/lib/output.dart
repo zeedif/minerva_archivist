@@ -2,6 +2,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:minerva_core/minerva_core.dart';
 
+import 'l10n/app_localizations.dart';
 import 'run_controller.dart';
 import 'settings.dart';
 
@@ -379,6 +380,7 @@ class _TitleBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = _Palette(context);
+    final l = AppLocalizations.of(context);
     Widget button(String tip, Widget icon, VoidCallback? onPressed) => Tooltip(
       message: tip,
       child: IconButton(icon: icon, onPressed: onPressed),
@@ -411,7 +413,7 @@ class _TitleBar extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Output',
+                      l.output,
                       style: TextStyle(color: palette.text, fontSize: 13),
                     ),
                   ],
@@ -420,18 +422,18 @@ class _TitleBar extends StatelessWidget {
             ),
           ),
           button(
-            'Copy all',
+            l.copyAll,
             Icon(FluentIcons.copy, size: 13, color: palette.dim),
             () => Clipboard.setData(
-              ClipboardData(text: outputLines(controller).join('\n')),
+              ClipboardData(text: outputLines(controller, l).join('\n')),
             ),
           ),
-          dockButton(Dock.left, 'Dock to the left'),
-          dockButton(Dock.bottom, 'Dock to the bottom'),
-          dockButton(Dock.right, 'Dock to the right'),
-          dockButton(Dock.floating, 'Float'),
+          dockButton(Dock.left, l.dockLeft),
+          dockButton(Dock.bottom, l.dockBottom),
+          dockButton(Dock.right, l.dockRight),
+          dockButton(Dock.floating, l.float),
           button(
-            'Hide (F12)',
+            l.hidePanel,
             Icon(FluentIcons.chrome_close, size: 11, color: palette.dim),
             () => layout.update(() => layout.visible = false),
           ),
@@ -531,54 +533,66 @@ final class _Palette {
 enum _Tone { dim, heading, error }
 
 /// What the last preview or run reported, as plain text lines.
-List<String> outputLines(RunController controller) => [
-  for (final (line, _) in _styledLines(controller)) line,
+List<String> outputLines(RunController controller, AppLocalizations l) => [
+  for (final (line, _) in _styledLines(controller, l)) line,
 ];
 
 /// Each line with how it is drawn: null for plain text.
-List<(String, _Tone?)> _styledLines(RunController controller) {
-  final dry = controller.applied ? '' : ' (preview)';
+List<(String, _Tone?)> _styledLines(
+  RunController controller,
+  AppLocalizations l,
+) {
+  final dry = controller.applied ? '' : l.logPreview;
   return [
-    if (controller.syncSummary case final summary?) (summary, _Tone.dim),
+    if (controller.sync case (:final downloaded, :final errors))
+      (
+        '${l.logSync(downloaded)}${errors == 0 ? '' : l.logSyncErrors(errors)}',
+        _Tone.dim,
+      ),
     for (final platform in controller.platforms) ...[
       ('', null),
-      ('== ${platform.name}', _Tone.heading),
+      ('== ${platform.name ?? l.logRun}', _Tone.heading),
       if (platform.selection case final selection?) ...[
         (
-          'Selected ${selection.stats.selected} of ${selection.stats.total}'
+          '${l.logSelected(selection.stats.selected, selection.stats.total)}'
               '${selection.stats.reasons.isEmpty ? "" : "  (${selection.stats.reasons.join(', ')})"}',
           null,
         ),
         for (final entry in selection.unmatchedWishlist)
-          ('Wishlist entry matches nothing: $entry', null),
+          (l.logWishlistUnmatched(entry), null),
       ],
       if (platform.audit case final audit?)
         (
-          '${audit.present.length}/${audit.results.length} on disk, '
-              '${audit.missing.length} missing, '
-              '${audit.unknownFiles.length} unknown',
+          l.logAudit(
+            audit.present.length,
+            audit.results.length,
+            audit.missing.length,
+            audit.unknownFiles.length,
+          ),
           null,
         ),
       if (platform.download case final download?) ...[
         (
-          '${download.plan.selected.length} to download, '
-              '${_size(download.plan.totalBytes)}'
-              '${download.seeders == null ? "" : ", ${download.seeders} seeders"}$dry',
+          '${l.logToDownload(download.plan.selected.length, _size(download.plan.totalBytes))}'
+              '${download.seeders == null ? "" : l.logSeeders(download.seeders!)}$dry',
           null,
         ),
         for (final name in download.plan.unmatched)
-          ('Not distributed: $name', null),
-        for (final name in download.held)
-          ('Held by a curated folder: $name', null),
+          (l.logNotDistributed(name), null),
+        for (final name in download.held) (l.logHeld(name), null),
       ],
       if (platform.transfer case final transfer?
           when platform.fetched == null) ...[
         (
-          '${transfer.files.where((f) => f.isComplete).length}/'
-              '${transfer.files.length} files  '
-              '${_size(transfer.done)} of ${_size(transfer.total)}  '
-              '${_size(transfer.bytesPerSecond)}/s  '
-              '${transfer.seeds} seeds, ${transfer.peers} peers',
+          l.logTransfer(
+            transfer.files.where((f) => f.isComplete).length,
+            transfer.files.length,
+            _size(transfer.done),
+            _size(transfer.total),
+            _size(transfer.bytesPerSecond),
+            transfer.seeds,
+            transfer.peers,
+          ),
           _Tone.dim,
         ),
         for (final file in [...transfer.files]..sort(_byActivity))
@@ -590,13 +604,13 @@ List<(String, _Tone?)> _styledLines(RunController controller) {
           ),
       ],
       if (platform.fetched case final fetched?)
-        ('$fetched file(s) downloaded', null),
+        (l.logDownloaded(fetched), null),
       if (platform.organized case final actions?)
-        ('Organize: ${actions.summary}$dry', null),
+        ('${l.logOrganize(actions.summary)}$dry', null),
       if (platform.playlists case final count?)
-        ('$count playlist(s)$dry', null),
+        ('${l.logPlaylists(count)}$dry', null),
       if (platform.pruned case final pruned?)
-        ('${pruned.moved.length} moved to $trashFolderName$dry', null),
+        ('${l.logPruned(pruned.moved.length, trashFolderName)}$dry', null),
       for (final failure in platform.failures) (failure, _Tone.error),
     ],
   ];
@@ -645,7 +659,8 @@ class _OutputLogState extends State<OutputLog> {
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
-    final lines = _styledLines(c);
+    final l = AppLocalizations.of(context);
+    final lines = _styledLines(c, l);
     final following = !_scroll.hasClients || _scroll.position.extentAfter < 24;
     if (following) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -658,10 +673,7 @@ class _OutputLogState extends State<OutputLog> {
     final spans = lines.isEmpty
         ? [
             TextSpan(
-              text: c.running
-                  ? 'Starting…'
-                  : 'Preview shows what a run would do without touching any '
-                        'file. Apply does it.',
+              text: c.running ? l.logStarting : l.logIdle,
               style: TextStyle(color: palette.dim),
             ),
           ]
@@ -701,14 +713,14 @@ class _ContextMenu extends StatelessWidget {
   final Offset anchor;
   final List<ContextMenuButtonItem> items;
 
-  static String _label(ContextMenuButtonItem item) =>
+  static String _label(AppLocalizations l, ContextMenuButtonItem item) =>
       item.label ??
       switch (item.type) {
-        ContextMenuButtonType.copy => 'Copy',
-        ContextMenuButtonType.selectAll => 'Select all',
-        ContextMenuButtonType.cut => 'Cut',
-        ContextMenuButtonType.paste => 'Paste',
-        ContextMenuButtonType.delete => 'Delete',
+        ContextMenuButtonType.copy => l.menuCopy,
+        ContextMenuButtonType.selectAll => l.menuSelectAll,
+        ContextMenuButtonType.cut => l.menuCut,
+        ContextMenuButtonType.paste => l.menuPaste,
+        ContextMenuButtonType.delete => l.delete,
         _ => item.type.name,
       };
 
@@ -726,7 +738,10 @@ class _ContextMenu extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (final item in items)
-                ListTile(title: Text(_label(item)), onPressed: item.onPressed),
+                ListTile(
+                  title: Text(_label(AppLocalizations.of(context), item)),
+                  onPressed: item.onPressed,
+                ),
             ],
           ),
         ),

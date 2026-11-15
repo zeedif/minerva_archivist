@@ -1,5 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 
+import 'l10n/app_localizations.dart';
+
 /// A setting: its name, one line of help, then its control. A section's
 /// only setting leaves the name to the section title.
 class Field extends StatelessWidget {
@@ -212,8 +214,8 @@ class BadgeFlow<T extends Object> extends StatelessWidget {
                 children: [
                   Text(
                     pool.isEmpty
-                        ? 'Drag a badge here to leave it out.'
-                        : 'Not used:',
+                        ? AppLocalizations.of(context).dropToLeaveOut
+                        : AppLocalizations.of(context).notUsed,
                     style: theme.typography.caption,
                   ),
                   for (final value in pool)
@@ -467,7 +469,9 @@ class _PickerFlyoutState extends State<_PickerFlyout> {
           children: [
             TextBox(
               autofocus: true,
-              placeholder: widget.custom ? 'Filter, or type a value' : 'Filter',
+              placeholder: widget.custom
+                  ? AppLocalizations.of(context).filterOrType
+                  : AppLocalizations.of(context).filter,
               prefix: const Padding(
                 padding: EdgeInsets.only(left: 8),
                 child: Icon(FluentIcons.search, size: 12),
@@ -489,7 +493,7 @@ class _PickerFlyoutState extends State<_PickerFlyout> {
                   if (offerTyped)
                     ListTile(
                       leading: const Icon(FluentIcons.add, size: 12),
-                      title: Text('Use "$typed"'),
+                      title: Text(AppLocalizations.of(context).useTyped(typed)),
                       onPressed: () => widget.onPicked(typed),
                     ),
                   for (final choice in matches)
@@ -501,9 +505,9 @@ class _PickerFlyoutState extends State<_PickerFlyout> {
                       onPressed: () => widget.onPicked(choice.value),
                     ),
                   if (matches.isEmpty && !offerTyped)
-                    const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Text('Nothing matches.'),
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(AppLocalizations.of(context).nothingMatches),
                     ),
                 ],
               ),
@@ -611,7 +615,7 @@ class PathBox extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Tooltip(
-          message: 'Browse',
+          message: AppLocalizations.of(context).browse,
           child: Button(
             onPressed: onChanged == null
                 ? null
