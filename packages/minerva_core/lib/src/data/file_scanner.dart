@@ -4,7 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:path/path.dart' as p;
 
@@ -98,15 +98,14 @@ abstract interface class Hasher {
     bool sha256 = false,
   });
 
-  /// Hash every file entry inside an archive (e.g. a MiNERVA `.zip`), keyed by
-  /// the entry path. Returns an empty map when [archive] isn't a supported
-  /// container.
+  /// Identifies every entry of a `.zip` by the CRC-32 and size its central
+  /// directory records, without decompressing anything. Entries [digest]
+  /// accepts are decompressed for their MD5 and SHA-1 as well.
+  ///
+  /// Empty when [archive] is not a zip.
   Future<Map<String, FileHashes>> hashArchive(
     File archive, {
-    bool crc32 = true,
-    bool md5 = true,
-    bool sha1 = true,
-    bool sha256 = false,
+    bool Function(FileHashes entry)? digest,
   });
 }
 
@@ -167,44 +166,37 @@ final class StreamingHasher implements Hasher {
   @override
   Future<Map<String, FileHashes>> hashArchive(
     File archive, {
-    bool crc32 = true,
-    bool md5 = true,
-    bool sha1 = true,
-    bool sha256 = false,
+    bool Function(FileHashes entry)? digest,
   }) async {
     if (p.extension(archive.path).toLowerCase() != '.zip') return const {};
-    final bytes = await archive.readAsBytes();
-    final decoded = ZipDecoder().decodeBytes(bytes);
-    final result = <String, FileHashes>{};
-    for (final entry in decoded) {
-      if (!entry.isFile) continue;
-      final data = entry.readBytes();
-      if (data == null) continue;
-      result[entry.name] = _fromBytes(
-        data,
-        crc32: crc32,
-        md5: md5,
-        sha1: sha1,
-        sha256: sha256,
-      );
+    final input = InputFileStream(archive.path);
+    try {
+      final result = <String, FileHashes>{};
+      for (final entry in ZipDecoder().decodeStream(input)) {
+        if (!entry.isFile) continue;
+        final listed = FileHashes(
+          size: entry.size,
+          crc32: entry.crc32?.toRadixString(16).padLeft(8, '0'),
+        );
+        if (digest == null || !digest(listed)) {
+          result[entry.name] = listed;
+          continue;
+        }
+        final bytes = entry.readBytes();
+        result[entry.name] = bytes == null
+            ? listed
+            : FileHashes(
+                size: listed.size,
+                crc32: listed.crc32,
+                md5: crypto.md5.convert(bytes).toString(),
+                sha1: crypto.sha1.convert(bytes).toString(),
+              );
+        entry.clear();
+      }
+      return result;
+    } finally {
+      await input.close();
     }
-    return result;
-  }
-
-  FileHashes _fromBytes(
-    List<int> bytes, {
-    required bool crc32,
-    required bool md5,
-    required bool sha1,
-    required bool sha256,
-  }) {
-    return FileHashes(
-      size: bytes.length,
-      crc32: crc32 ? (Crc32()..add(bytes)).hex : null,
-      md5: md5 ? crypto.md5.convert(bytes).toString() : null,
-      sha1: sha1 ? crypto.sha1.convert(bytes).toString() : null,
-      sha256: sha256 ? crypto.sha256.convert(bytes).toString() : null,
-    );
   }
 }
 

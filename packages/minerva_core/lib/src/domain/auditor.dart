@@ -219,7 +219,9 @@ final class RomAuditor {
     for (final ref in indexRoms) {
       if (ref.rom.sha1 != null) bySha1.putIfAbsent(ref.rom.sha1!, () => ref);
       if (ref.rom.md5 != null) byMd5.putIfAbsent(ref.rom.md5!, () => ref);
-      if (ref.rom.crc32 != null) byCrc.putIfAbsent(ref.rom.crc32!, () => ref);
+      if (ref.rom.crc32 case final crc?) {
+        byCrc.putIfAbsent(_crcKey(crc, ref.rom.size), () => ref);
+      }
     }
 
     // Every claimant per ROM, not just the first: a duplicate can be scanned
@@ -248,7 +250,7 @@ final class RomAuditor {
         final hit = byMd5[h.md5!];
         if (hit != null) return hit;
       }
-      return h.crc32 != null ? byCrc[h.crc32!] : null;
+      return h.crc32 == null ? null : byCrc[_crcKey(h.crc32!, h.size)];
     }
 
     if (computeHashes) {
@@ -273,9 +275,9 @@ final class RomAuditor {
         final entries = ext == '.zip'
             ? await hasher.hashArchive(
                 sf.file,
-                crc32: needCrc,
-                md5: needMd5,
-                sha1: true,
+                digest: (entry) =>
+                    entry.size <= _digestLimit &&
+                    !byCrc.containsKey(_crcKey(entry.crc32 ?? '', entry.size)),
               )
             : {
                 sf.file.path: await hasher.hashFile(
@@ -439,6 +441,11 @@ final class RomAuditor {
   /// entries, which can then only match themselves.
   static String _key(DatGame g, RomEntry r) =>
       r.sha1 ?? r.md5 ?? r.crc32 ?? '${g.name}::${r.name}';
+
+  /// Largest unrecognized archive entry decompressed to look for a digest.
+  static const _digestLimit = 256 << 20;
+
+  static String _crcKey(String crc32, int size) => '$crc32:$size';
 
   RomFormat _formatFor(String name) {
     final ext = p.extension(name).toLowerCase();
