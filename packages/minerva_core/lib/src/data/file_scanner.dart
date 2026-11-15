@@ -11,23 +11,24 @@ import 'package:path/path.dart' as p;
 import 'chd_header.dart';
 
 final class ScannedFile {
-  const ScannedFile({
-    required this.file,
-    required this.relativePath,
-    required this.size,
-  });
+  const ScannedFile({required this.file, required this.relativePath});
 
   final File file;
+
+  /// Relative to the scanned root.
   final String relativePath;
-  final int size;
 }
 
-/// Walks a ROM directory, optionally filtered by extension.
 abstract interface class FileScanner {
+  /// Every file under [root], links not followed.
+  ///
+  /// [maxDepth] bounds how many folders deep a file may sit: 0 is the root
+  /// itself, null is unbounded. Top-level folders named in [skip] are not
+  /// entered.
   Stream<ScannedFile> scan(
     Directory root, {
-    bool recursive = true,
-    Set<String>? extensions,
+    int? maxDepth,
+    Set<String> skip = const {},
   });
 }
 
@@ -37,25 +38,33 @@ final class DirectoryFileScanner implements FileScanner {
   @override
   Stream<ScannedFile> scan(
     Directory root, {
-    bool recursive = true,
-    Set<String>? extensions,
+    int? maxDepth,
+    Set<String> skip = const {},
   }) async* {
     if (!await root.exists()) return;
-    await for (final entity in root.list(
-      recursive: recursive,
-      followLinks: false,
-    )) {
-      if (entity is! File) continue;
-      if (extensions != null &&
-          !extensions.contains(p.extension(entity.path).toLowerCase())) {
-        continue;
+    yield* _walk(root, root, 0, maxDepth, skip);
+  }
+
+  Stream<ScannedFile> _walk(
+    Directory root,
+    Directory directory,
+    int depth,
+    int? maxDepth,
+    Set<String> skip,
+  ) async* {
+    await for (final entity in directory.list(followLinks: false)) {
+      switch (entity) {
+        case File():
+          yield ScannedFile(
+            file: entity,
+            relativePath: p.relative(entity.path, from: root.path),
+          );
+        case Directory()
+            when (maxDepth == null || depth < maxDepth) &&
+                !(depth == 0 && skip.contains(p.basename(entity.path))):
+          yield* _walk(root, entity, depth + 1, maxDepth, skip);
+        default:
       }
-      final stat = await entity.stat();
-      yield ScannedFile(
-        file: entity,
-        relativePath: p.relative(entity.path, from: root.path),
-        size: stat.size,
-      );
     }
   }
 }

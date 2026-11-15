@@ -1,0 +1,33 @@
+// Copy to <cache>/profiles.jsonc. Keys are the options of `minerva run`;
+// a profile overrides "defaults", and the command line overrides both.
+{
+  "defaults": {
+    "lang": ["En"],
+    "priority": ["lang", "ra", "langcount"],
+    "langcount": "most",
+    "layout": "extracted",
+    "exclude": ["mia", "preproduction", "demos", "unlicensed", "pirate", "bios"]
+  },
+  "profiles": {
+    // A cached DAT is named by its system, whatever date stamp the file carries.
+    "gb": {
+      "dat": "Nintendo - Game Boy",
+      "root": "D:/Roms/gb",
+      "achievements": "any"
+    },
+    // Paths are relative to this file.
+    "snes": {
+      "dat": "Nintendo - Super Nintendo Entertainment System",
+      "root": "D:/Roms/snes",
+      "wishlist": "wishlist.jsonc",
+      "lang": ["En", "Ja"]
+    },
+    // A disc system audited against both its MAME-Redump and Redump DATs.
+    "psx": {
+      "dat": ["mame-redump:Sony - PlayStation", "redump:Sony - PlayStation"],
+      "root": "D:/Roms/psx",
+      "langcount": "fewest",
+      "skip": ["prune"]
+    }
+  }
+}

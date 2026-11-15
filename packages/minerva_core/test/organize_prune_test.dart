@@ -35,7 +35,7 @@ void main() {
       final actions = await const EsdeRomOrganizer().organize(
         present: [_present('Metroid (USA)', src)],
         romRoot: tmp,
-        config: const OrganizeConfig(layout: FolderLayout.flat),
+        config: const OrganizeConfig(layout: Layout.zip),
       );
       expect(actions.single.op, OrganizeOp.moved);
       expect(File('${tmp.path}/Metroid (USA).zip').existsSync(), isTrue);
@@ -49,7 +49,7 @@ void main() {
       final actions = await const EsdeRomOrganizer().organize(
         present: [_present('Super Mario (USA)', src)],
         romRoot: tmp,
-        config: const OrganizeConfig(layout: FolderLayout.flat, extract: true),
+        config: const OrganizeConfig(layout: Layout.extracted),
       );
       expect(actions.single.op, OrganizeOp.extracted);
       expect(
@@ -67,7 +67,7 @@ void main() {
       final actions = await const EsdeRomOrganizer().organize(
         present: [_present('Silent Hill (USA)', src)],
         romRoot: tmp,
-        config: const OrganizeConfig(layout: FolderLayout.flat, extract: true),
+        config: const OrganizeConfig(layout: Layout.extracted),
       );
       expect(actions.single.op, OrganizeOp.extracted);
       expect(
@@ -92,7 +92,7 @@ void main() {
       await const EsdeRomOrganizer().organize(
         present: [_present('Tetris (USA)', src)],
         romRoot: tmp,
-        config: const OrganizeConfig(layout: FolderLayout.folderAsFile),
+        config: const OrganizeConfig(layout: Layout.zipInFolder),
       );
       expect(
         File('${tmp.path}/Tetris (USA)/Tetris (USA).zip').existsSync(),
@@ -107,10 +107,7 @@ void main() {
       await const EsdeRomOrganizer().organize(
         present: [_present('Zelda (USA)', src)],
         romRoot: tmp,
-        config: const OrganizeConfig(
-          layout: FolderLayout.folderAsFile,
-          extract: true,
-        ),
+        config: const OrganizeConfig(layout: Layout.extractedInFolder),
       );
       expect(
         File('${tmp.path}/Zelda (USA).nes/Zelda (USA).nes').readAsStringSync(),
@@ -132,10 +129,7 @@ void main() {
         final actions = await const EsdeRomOrganizer().organize(
           present: [_present('Zelda (USA)', src)],
           romRoot: tmp,
-          config: const OrganizeConfig(
-            layout: FolderLayout.folderAsFile,
-            extract: true,
-          ),
+          config: const OrganizeConfig(layout: Layout.extractedInFolder),
         );
         expect(actions.single.op, OrganizeOp.skippedProtected);
         expect(
@@ -165,10 +159,7 @@ void main() {
           _present('Tetris (USA)', fine),
         ],
         romRoot: tmp,
-        config: const OrganizeConfig(
-          layout: FolderLayout.folderAsFile,
-          extract: true,
-        ),
+        config: const OrganizeConfig(layout: Layout.extractedInFolder),
       );
 
       final byGame = {for (final a in actions) a.game: a};
@@ -190,7 +181,7 @@ void main() {
         present: [_present('Tetris (USA)', src)],
         romRoot: tmp,
         config: const OrganizeConfig(
-          layout: FolderLayout.folderAsFile,
+          layout: Layout.zipInFolder,
           protectedFolders: {'Tetris (USA)'},
         ),
       );

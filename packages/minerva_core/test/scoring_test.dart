@@ -1893,12 +1893,15 @@ void main() {
                   languagePriority: const ['Es', 'En'],
                   regionPriority: config.defaultRegionOrder,
                   priority: priority,
+                  langCount: priority.contains(ScoreAxis.langcount)
+                      ? LangCount.most
+                      : null,
                 ),
               )
               .games
               .single
               .name;
-      const axes = [ScoreAxis.lang, ScoreAxis.multilang];
+      const axes = [ScoreAxis.lang, ScoreAxis.langcount];
       // Japan carries the most languages but not the preferred one.
       expect(winner(dumps, axes), 'Tour (Europe)');
       expect(winner(dumps, const [ScoreAxis.lang]), 'Tour (USA)');
@@ -1948,7 +1951,8 @@ void main() {
             scoring: ScoringConfig(
               languagePriority: const ['Es', 'En'],
               regionPriority: config.defaultRegionOrder,
-              priority: const [ScoreAxis.lang, ScoreAxis.fewlang],
+              priority: const [ScoreAxis.lang, ScoreAxis.langcount],
+              langCount: LangCount.fewest,
             ),
           )
           .games

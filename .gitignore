@@ -4,3 +4,6 @@
 
 # Local metadata mirror + tools + DAT copies (regenerate with `sync`)
 .minerva-cache/
+
+# Compiled bundles
+build/

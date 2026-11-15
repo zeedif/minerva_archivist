@@ -77,8 +77,10 @@ final class AuditReport {
   /// 1G1R runner-up is still understood.
   final LibraryIndex library;
 
-  Iterable<AuditedRom> get present =>
-      results.where((r) => r.status == RomStatus.present);
+  /// Games whose every ROM is on disk, whatever the files are called.
+  Iterable<AuditedRom> get present => results.where(
+    (r) => r.status == RomStatus.present || r.status == RomStatus.wrongName,
+  );
   Iterable<AuditedRom> get missing =>
       results.where((r) => r.status == RomStatus.missing);
   Iterable<AuditedRom> get badDumps =>
@@ -180,6 +182,9 @@ final class RomAuditor {
 
     /// When false, do a fast name/size-only pass (no hashing).
     bool computeHashes = true,
+
+    /// How many folders below the root are searched; null is unbounded.
+    int? maxDepth,
   }) async {
     final recognized = catalog ?? dat;
     final indexRoms = <_RomRef>[
@@ -254,15 +259,11 @@ final class RomAuditor {
     }
 
     if (computeHashes) {
-      await for (final sf in scanner.scan(romRoot)) {
-        // Quarantined files are not part of the collection: counting them would
-        // report a pruned game as present and stop it being re-downloaded.
-        if (const {
-          trashFolderName,
-          workFolderName,
-        }.contains(p.split(sf.relativePath).first)) {
-          continue;
-        }
+      await for (final sf in scanner.scan(
+        romRoot,
+        maxDepth: maxDepth,
+        skip: const {trashFolderName, workFolderName},
+      )) {
         final ext = p.extension(sf.file.path).toLowerCase();
         if (ignored.contains(ext)) {
           // Not worth hashing, but it still tells us whether a folder is curated.

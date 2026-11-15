@@ -10,44 +10,42 @@ import 'package:path/path.dart' as p;
 import 'auditor.dart';
 import 'library.dart';
 
-enum FolderLayout {
-  /// Files/folders sit directly in the ROM root.
-  flat,
+/// How a game sits under the ROM root. Multi-file games extract to
+/// `<game>/<tracks>` under either extracted layout.
+enum Layout {
+  /// `<root>/<game>.zip`
+  zip('zip'),
 
-  /// ES-DE "folder-as-file": each game gets its own folder.
-  folderAsFile,
+  /// `<root>/<game>/<game>.zip`
+  zipInFolder('zip-in-folder', inFolder: true),
+
+  /// `<root>/<game>.<ext>`
+  extracted('extracted', extract: true),
+
+  /// `<root>/<game>.<ext>/<game>.<ext>`, which ES-DE launches as one entry.
+  extractedInFolder('extracted-in-folder', extract: true, inFolder: true);
+
+  const Layout(this.cli, {this.extract = false, this.inFolder = false});
+
+  /// The spelling options and profiles use.
+  final String cli;
+  final bool extract;
+  final bool inFolder;
 }
 
-/// Organization config. The four legacy layout modes are the (layout × extract)
-/// matrix:
-///
-/// | layout        | extract | result                                              |
-/// |---------------|---------|-----------------------------------------------------|
-/// | flat          | false   | `<root>/<game>.zip`                    (Archived Flat)|
-/// | flat          | true    | `<root>/<game>.<ext>` or `<root>/<game>/<tracks>` (Smart Flat)|
-/// | folderAsFile  | false   | `<root>/<game>/<game>.zip`         (Archived in Folder)|
-/// | folderAsFile  | true    | `<root>/<game>.<ext>/<game>.<ext>` or `<root>/<game>/<tracks>` |
 final class OrganizeConfig {
   const OrganizeConfig({
-    this.layout = FolderLayout.flat,
-    this.extract = false,
+    this.layout = Layout.zip,
     this.protectedFolders = const {},
   });
 
-  final FolderLayout layout;
+  final Layout layout;
 
-  /// When true, `.zip` archives are unzipped; when false, kept compressed.
-  final bool extract;
-
-  /// Top-level folder names never touched (user mods/hacks/patches).
+  /// Top-level folder names never touched.
   final Set<String> protectedFolders;
 
-  /// The same layout with [folders] protected too. Curated folders are discovered
-  /// per audit, so they join the explicitly protected ones here rather than at
-  /// the point the layout is read off the command line.
   OrganizeConfig protecting(Set<String> folders) => OrganizeConfig(
     layout: layout,
-    extract: extract,
     protectedFolders: {...protectedFolders, ...folders},
   );
 }
@@ -169,10 +167,10 @@ final class EsdeRomOrganizer {
     bool dryRun,
   ) async {
     final sourceExt = p.extension(source.path);
-    final folderMode = config.layout == FolderLayout.folderAsFile;
+    final folderMode = config.layout.inFolder;
 
     // --- Keep-compressed modes (no extraction) ---
-    if (!config.extract) {
+    if (!config.layout.extract) {
       final unit = '$game$sourceExt';
       if (!folderMode) {
         // Mode 1: Archived Flat -> <root>/<game>.zip
@@ -402,8 +400,7 @@ final class CuratedFolderRenamer {
     final game = complete.first;
     // The extracted folder-as-file layout names the folder after the file, so it
     // is the one layout that keeps the extension.
-    final canonical =
-        config.layout == FolderLayout.folderAsFile && config.extract
+    final canonical = config.layout == Layout.extractedInFolder
         ? '$game${p.extension(entry.roms.first.rom.name)}'
         : game;
     if (entry.name == canonical) return null;

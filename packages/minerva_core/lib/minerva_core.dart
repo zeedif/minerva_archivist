@@ -24,5 +24,7 @@ export 'src/domain/auditor.dart';
 export 'src/domain/download.dart';
 export 'src/domain/enrichment.dart';
 export 'src/domain/library.dart';
+export 'src/domain/options.dart';
 export 'src/domain/organize.dart';
+export 'src/domain/pipeline.dart';
 export 'src/domain/selection.dart';

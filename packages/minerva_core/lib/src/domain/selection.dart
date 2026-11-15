@@ -20,7 +20,7 @@ import 'enrichment.dart';
 /// Matching lives in [wishlistReach]; what naming a title claims about it is
 /// [WishlistMode]'s job.
 List<String> parseWishlist(String source) {
-  final decoded = jsonDecode(_stripComments(source));
+  final decoded = jsonDecode(stripJsonComments(source));
   if (decoded is! List) {
     throw const FormatException(
       'Wishlist must be a JSON/JSONC array of strings.',
@@ -32,7 +32,8 @@ List<String> parseWishlist(String source) {
   ];
 }
 
-String _stripComments(String s) {
+/// Removes `//` and `/* */` comments outside string literals.
+String stripJsonComments(String s) {
   final out = StringBuffer();
   var i = 0;
   var inString = false;
@@ -764,9 +765,12 @@ final class EditionTags {
 
 /// The tie-breaks whose precedence the caller chooses.
 ///
-/// [lang], [multilang], [fewlang] and [ra] play no part when left out. [region] keeps a
+/// [lang], [langcount] and [ra] play no part when left out. [region] keeps a
 /// fixed position instead — see [GameScore] — so naming it only moves it up.
-enum ScoreAxis { lang, region, ra, multilang, fewlang }
+enum ScoreAxis { lang, region, ra, langcount }
+
+/// Which way [ScoreAxis.langcount] ranks the languages a dump carries.
+enum LangCount { most, fewest }
 
 /// User-tunable inputs to the 1G1R scorer.
 ///
@@ -781,8 +785,18 @@ final class ScoringConfig {
     this.priority = defaultPriority,
     this.supersets = SupersetMode.prefer,
     this.compilations = CompilationMode.fill,
+    this.langCount,
   }) : languages = PriorityList(languagePriority, fallback: languageFallback),
-       regions = PriorityList(regionPriority, fallback: regionFallback);
+       regions = PriorityList(regionPriority, fallback: regionFallback) {
+    if (priority.toSet().length != priority.length) {
+      throw ArgumentError.value(priority, 'priority', 'names an axis twice');
+    }
+    if (priority.contains(ScoreAxis.langcount) != (langCount != null)) {
+      throw ArgumentError(
+        'langCount must be given when, and only when, priority names langcount.',
+      );
+    }
+  }
 
   /// Language, then region, then achievements.
   static const defaultPriority = [
@@ -806,6 +820,9 @@ final class ScoringConfig {
 
   /// What a pack is worth against the games in it.
   final CompilationMode compilations;
+
+  /// Direction of [ScoreAxis.langcount]; set exactly when [priority] names it.
+  final LangCount? langCount;
 
   bool get ranksRetroAchievements => priority.contains(ScoreAxis.ra);
 
@@ -867,6 +884,9 @@ final class GameScore implements Comparable<GameScore> {
   final int cloneListPriority;
   final ProductionStatus status;
   final int languageRank;
+
+  /// Distinct languages carried, signed so that lower is better whichever way
+  /// [LangCount] points.
   final int languageCount;
   final int regionRank;
 
@@ -931,8 +951,7 @@ final class GameScore implements Comparable<GameScore> {
   int _onAxis(ScoreAxis axis, GameScore other) => switch (axis) {
     ScoreAxis.lang => languageRank.compareTo(other.languageRank),
     ScoreAxis.region => regionRank.compareTo(other.regionRank),
-    ScoreAxis.multilang => other.languageCount.compareTo(languageCount),
-    ScoreAxis.fewlang => languageCount.compareTo(other.languageCount),
+    ScoreAxis.langcount => languageCount.compareTo(other.languageCount),
     // Graded, so two clones that both carry achievements resolve here rather
     // than at the fail-safe: a hash join proves the set runs on these bytes, a
     // name join only suggests it.
@@ -962,9 +981,7 @@ final class ScoringEngine {
           candidate.cloneListPriority ?? GameCandidate.defaultCloneListPriority,
       status: g.metadata.status,
       languageRank: config.languages.rank(g.metadata.languages),
-      languageCount: {
-        for (final l in g.metadata.languages) l.split('-').first,
-      }.length,
+      languageCount: _languageCount(g, config.langCount),
       regionRank: config.regions.rank(g.metadata.regions),
       modernRank: editions.modernRank(g.name),
       budgetRank: editions.budgetRank(g.name),
@@ -981,6 +998,13 @@ final class ScoringEngine {
       representationFirst: config.packsOutrankPriority,
       axes: config.priority,
     );
+  }
+
+  static int _languageCount(DatGame game, LangCount? direction) {
+    final count = {
+      for (final l in game.metadata.languages) l.split('-').first,
+    }.length;
+    return direction == LangCount.fewest ? count : -count;
   }
 
   /// Tags that mark a title as an alternative to an original release, in step
@@ -1124,6 +1148,28 @@ WishlistReach wishlistReach(
     groups: groups,
     packGroups: packGroups.difference(groups),
   );
+}
+
+/// The wishlist entries that name no game of the DAT and no clonelist title.
+List<String> unmatchedWishlistEntries(
+  List<String> wishlist,
+  Iterable<DatGame> games,
+  CloneList? cloneList,
+) {
+  final known = {
+    for (final g in games) _cleanBasename(g.name),
+    for (final variant in cloneList?.variants ?? const <VariantGroup>[])
+      for (final title in [
+        ...variant.titles,
+        ...variant.supersets,
+        ...variant.compilations,
+      ])
+        _cleanBasename(title.searchTerm),
+  };
+  return [
+    for (final entry in wishlist)
+      if (!known.contains(_cleanBasename(entry))) entry,
+  ];
 }
 
 /// Strips path, extension, parenthetical/bracket tags, and a trailing
@@ -1279,10 +1325,14 @@ final class SelectionResult {
     required this.stats,
     this.groups = const {},
     this.raMatches = const {},
+    this.unmatchedWishlist = const [],
   });
 
   final List<DatGame> games;
   final SelectionStats stats;
+
+  /// Wishlist entries that name nothing in this DAT.
+  final List<String> unmatchedWishlist;
 
   /// The clone groups each candidate competed in, winners and runners-up alike,
   /// so a caller can ask what else contested a slot. A pack lists every group it
@@ -1408,6 +1458,11 @@ final class GameSelector {
         for (final c in candidates)
           c.game.name: {if (scoring.packsStandIn) ...c.groups else c.groupKey},
       },
+      unmatchedWishlist: unmatchedWishlistEntries(
+        wishlist,
+        enriched.games,
+        cloneList,
+      ),
       raMatches: {
         for (final c in candidates) c.game.name: c.game.retroAchievements,
       },
